@@ -4,7 +4,7 @@
 # A single-file Streamlit application for the Assistant Director, Quality Assurance,
 # Moores Cancer Center (MCC) Clinical Trials Office (CTO).
 #
-# VERSION: Academic Scientific Writer Edition
+# VERSION: Final, Unabridged (All Sections and Narratives Included)
 #
 # This dashboard provides a proactive, intelligent, and risk-based view of the
 # CTO's QA Program, enhanced with rigorous scientific and statistical descriptions.
@@ -17,10 +17,10 @@
 #   - Quality by Design (QbD) and Risk-Based Quality Management (RBQM)
 #
 # To Run:
-# 1. Save this code as 'mcc_cto_scientific_dashboard.py'
+# 1. Save this code as 'mcc_cto_production_dashboard.py'
 # 2. Create 'requirements.txt' with the specified libraries.
 # 3. Install dependencies: pip install -r requirements.txt
-# 4. Run from your terminal: streamlit run mcc_cto_scientific_dashboard.py
+# 4. Run from your terminal: streamlit run mcc_cto_production_dashboard.py
 #
 # ======================================================================================
 
@@ -66,7 +66,6 @@ st.markdown("""
 @st.cache_data(ttl=900)
 def generate_master_data():
     np.random.seed(42)
-    # [Data generation logic is unchanged from the previous corrected version]
     num_trials = 60
     trial_ids = [f'MCC-{t}-{i:03d}' for t in ['IIT', 'IND', 'COG'] for i in range(1, 11)] + [f'INDUSTRY-{c}-{i:03d}' for c in ['PFE', 'BMY', 'MRK'] for i in range(1, 11)]
     portfolio_data = {'Trial_ID': trial_ids, 'Trial_Type': np.random.choice(['Investigator-Initiated (IIT)', 'Industry-Sponsored', 'Cooperative Group'], num_trials, p=[0.4, 0.4, 0.2]), 'Phase': np.random.choice(['I', 'I/II', 'II', 'III'], num_trials, p=[0.2, 0.3, 0.4, 0.1]), 'Disease_Team': np.random.choice(['Leukemia', 'Lung', 'Breast', 'GI', 'GU', 'Melanoma'], num_trials), 'Status': np.random.choice(['Enrolling', 'Follow-up', 'Closed to Accrual', 'Suspended'], num_trials, p=[0.6, 0.2, 0.15, 0.05]), 'Subjects_Enrolled': np.random.randint(5, 100, num_trials), 'PI_Experience_Level': np.random.choice(['Expert', 'Intermediate', 'New'], num_trials, p=[0.3, 0.5, 0.2]), 'Is_First_In_Human': np.random.choice([True, False], num_trials, p=[0.1, 0.9]), 'Num_Sites': np.random.choice([1, 2, 5], num_trials, p=[0.8, 0.15, 0.05])}
@@ -87,7 +86,6 @@ def generate_master_data():
 # ======================================================================================
 # SECTION 3: ANALYTICAL & REPORTING MODELS
 # ======================================================================================
-# [Modeling functions are unchanged from the previous corrected version]
 @st.cache_resource
 def get_trial_risk_model(portfolio_df):
     features, target = ['Trial_Type', 'Phase', 'PI_Experience_Level', 'Is_First_In_Human', 'Num_Sites'], 'Had_Major_Finding'
@@ -139,8 +137,15 @@ def plot_prophet_forecast(forecast, monthly_df):
     fig.update_layout(title='<b>12-Month Forecast of Total Audit Findings</b>', xaxis_title='Date', yaxis_title='Number of Findings', plot_bgcolor='white')
     return fig
 
+def plot_findings_heatmap_by_team(df):
+    heatmap_data = pd.crosstab(df['Disease_Team'], df['Category'])
+    fig = px.imshow(heatmap_data, labels=dict(x="Finding Category", y="Disease Team", color="Number of Findings"),
+                    x=heatmap_data.columns, y=heatmap_data.index, color_continuous_scale=px.colors.sequential.Blues,
+                    title="<b>Heatmap of Finding Categories by Disease Team</b>")
+    fig.update_layout(height=450)
+    return fig
+
 def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
-    # [PowerPoint generation logic is unchanged from the previous corrected version]
     prs = Presentation(); prs.slide_width = Inches(16); prs.slide_height = Inches(9)
     title_slide_layout = prs.slide_layouts[0]; slide = prs.slides.add_slide(title_slide_layout)
     title = slide.shapes.title; subtitle = slide.placeholders[1]; title.text = "MCC CTO Quality Assurance Executive Summary"; subtitle.text = f"Report Generated: {datetime.date.today().strftime('%Y-%m-%d')}"
@@ -163,22 +168,17 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     ppt_stream = io.BytesIO(); prs.save(ppt_stream); ppt_stream.seek(0)
     return ppt_stream
 
-
 # ======================================================================================
 # SECTION 5: MAIN APPLICATION LAYOUT & SCIENTIFIC NARRATIVE
 # ======================================================================================
 st.title("🔬 MCC CTO Scientific QA Command Center")
 st.markdown("##### An advanced analytics dashboard for strategic quality oversight, forecasting, and reporting.")
-
-# --- Data Loading ---
 portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
 risk_model, encoder, model_features, importance_df = get_trial_risk_model(portfolio_df)
 forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
 
-# --- Executive KPIs ---
 st.markdown("### I. Executive QA Program Health Dashboard")
-# [KPI calculation logic is unchanged from the previous corrected version]
-kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
 risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
 open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
 open_findings['Risk_Score'] = open_findings['Risk_Level'].map(risk_weights)
@@ -189,27 +189,24 @@ readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_
 kpi_col2.metric("Inspection Readiness Index", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs", "inverse")
 team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / 100
 avg_strain = team_df['Strain'].mean()
-kpi_col4.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", f"Target < 4.0", "normal")
+kpi_col3.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", f"Target < 4.0", "normal")
 st.markdown("---")
 
-# --- Tabs with Enhanced Descriptions ---
 tab1, tab2, tab3 = st.tabs(["**II. PREDICTIVE ANALYTICS & FORECASTING**", "**III. SYSTEMIC PROCESS & RISK ANALYSIS**", "**IV. ORGANIZATIONAL CAPABILITY & STRATEGY**"])
 
 with tab1:
     st.header("II. Predictive Analytics & Forecasting")
     st.markdown("_This section utilizes predictive modeling to forecast future states and quantify inherent risk, enabling a proactive, data-driven approach to quality management._")
-    
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("A. Time-Series Forecast of Audit Finding Volume")
         with st.expander("View Methodological Summary", expanded=False):
             st.markdown("""
             - **Purpose:** To forecast future operational workload and identify long-term trends in quality event reporting. This analysis provides a quantitative basis for resource planning and strategic goal setting.
-            - **Method:** An additive time-series model was developed using the `Prophet` library. The model decomposes the historical finding counts into trend, yearly seasonality, and holiday effects. It was then used to project finding volumes for the upcoming 12 months.
+            - **Method:** An additive time-series model was developed using the `Prophet` library. The model decomposes the historical finding counts into trend and yearly seasonality. It was then used to project finding volumes for the upcoming 12 months.
             - **Interpretation:** The solid line represents the median forecast (`yhat`), while the shaded area represents the 80% uncertainty interval. A consistently upward trend may necessitate requests for additional headcount, whereas a stable or downward trend validates the effectiveness of ongoing quality improvement initiatives.
             """)
         st.plotly_chart(plot_prophet_forecast(forecast_data, actual_monthly_data), use_container_width=True)
-        
     with col2:
         st.subheader("B. Inherent Risk Prediction for New Trials")
         with st.expander("View Methodological Summary", expanded=False):
@@ -218,14 +215,21 @@ with tab1:
             - **Method:** A multivariate logistic regression model was trained on the historical trial portfolio. The binary outcome variable was the presence/absence of at least one major or critical finding. Key predictors included Trial Type (e.g., IIT), Phase, and PI Experience. Model coefficients represent the change in the log-odds of the outcome for a one-unit change in the predictor variable.
             - **Interpretation:** The resulting probability score allows for the triage of new protocols into risk tiers. High-risk protocols (>60%) warrant enhanced oversight, such as increased monitoring frequency or assignment of more senior QA staff, thereby optimizing resource allocation.
             """)
-        # [Prediction logic remains the same]
-        st.info("Input trial characteristics to generate a risk score.")
-
+        p_type = st.selectbox("Trial Type", portfolio_df['Trial_Type'].unique(), key='p_type')
+        p_phase = st.selectbox("Trial Phase", portfolio_df['Phase'].unique(), key='p_phase')
+        p_pi_exp = st.selectbox("PI Experience", portfolio_df['PI_Experience_Level'].unique(), key='p_pi')
+        if st.button("🔬 Forecast Risk Profile", type="primary"):
+            input_data = {'Trial_Type': [p_type], 'Phase': [p_phase], 'PI_Experience_Level': [p_pi_exp], 'Is_First_In_Human': [False], 'Num_Sites': [1]}
+            input_df = pd.DataFrame(input_data)
+            input_encoded = pd.DataFrame(encoder.transform(input_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]), columns=encoder.get_feature_names_out(['Trial_Type', 'Phase', 'PI_Experience_Level']))
+            input_final = pd.concat([input_df.drop(columns=['Trial_Type', 'Phase', 'PI_Experience_Level']).reset_index(drop=True), input_encoded], axis=1)
+            input_aligned = input_final.reindex(columns=model_features, fill_value=0)
+            prediction_proba = risk_model.predict_proba(input_aligned)[0][1]
+            st.success(f"Predicted Risk of Major Finding: **{prediction_proba:.1%}**")
 
 with tab2:
     st.header("III. Systemic Process & Risk Analysis")
     st.markdown("_This section moves beyond individual data points to identify systemic trends, process vulnerabilities, and non-random patterns across the clinical trial portfolio._")
-    
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("A. Statistical Process Control (SPC) Analysis")
@@ -237,7 +241,6 @@ with tab2:
             """)
         category_to_monitor = st.selectbox("Select Finding Category to Analyze for Trends:", options=findings_df['Category'].unique())
         st.plotly_chart(plot_spc_chart(findings_df, 'Finding_Date', 'Category', category_to_monitor, f"SPC c-Chart for '{category_to_monitor}' Findings"), use_container_width=True)
-
     with col2:
         st.subheader("B. Finding Concentration Analysis by Disease Team")
         with st.expander("View Methodological Summary", expanded=False):
@@ -247,11 +250,10 @@ with tab2:
             - **Interpretation:** 'Hot spots' on the map suggest localized process or knowledge gaps rather than a global CTO issue. For example, a dark cell at the intersection of 'Leukemia' and 'AE/SAE Reporting' implies a targeted intervention (e.g., specialized training for the Leukemia team) would be more efficient and effective than a CTO-wide retraining effort.
             """)
         st.plotly_chart(plot_findings_heatmap_by_team(findings_df), use_container_width=True)
-        
+
 with tab3:
     st.header("IV. Organizational Capability & Strategic Oversight")
     st.markdown("_This section assesses the capacity and performance of the QA team and tracks progress against high-level strategic objectives._")
-
     st.subheader("A. Auditor Workload & Performance Analysis")
     with st.expander("View Methodological Summary", expanded=False):
         st.markdown("""
@@ -262,7 +264,6 @@ with tab3:
     fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>QA Team Resource & Strain Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd)
     fig.update_traces(textposition='top center'); fig.add_hline(y=team_df['Avg_Report_Turnaround_Days'].mean(), line_dash="dot"); fig.add_vline(x=team_df['Audits_Conducted_YTD'].mean(), line_dash="dot")
     st.plotly_chart(fig, use_container_width=True)
-
     st.subheader("B. Strategic Initiatives & Budgetary Control")
     st.markdown("This table tracks progress and financial status of key transformational projects designed to enhance the QA program's maturity and scalability.")
     initiatives_df['Forecasted_Spend'] = initiatives_df.apply(lambda row: (row['Spent_USD'] / row['Percent_Complete'] * 100) if row['Percent_Complete'] > 0 else 0, axis=1)
