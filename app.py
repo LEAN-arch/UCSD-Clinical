@@ -262,7 +262,8 @@ def plot_pi_findings_barchart_sme(pi_findings, pi_name):
 
 def plot_auditor_strain_sme(team_df):
     team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days'] / (team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill'])).round(2)
-    fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>Auditor Performance & Workload Quadrant Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround Time (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd, hovertemplate="<b>%{text}</b><br>Audits: %{x}<br>Avg. Turnaround: %{y:.1f} days<br>Strain Index: %{marker.size:.1f}<extra></extra>")
+    # THIS LINE IS NOW CORRECT (hovertemplate removed)
+    fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>Auditor Performance & Workload Quadrant Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround Time (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd)
     mean_x, mean_y = team_df['Audits_Conducted_YTD'].mean(), team_df['Avg_Report_Turnaround_Days'].mean()
     fig.add_hline(y=mean_y, line_dash="dot", line_color="grey", annotation_text="Avg. Efficiency")
     fig.add_vline(x=mean_x, line_dash="dot", line_color="grey", annotation_text="Avg. Workload")
@@ -270,7 +271,8 @@ def plot_auditor_strain_sme(team_df):
     fig.add_annotation(x=mean_x*1.2, y=mean_y*0.8, text="<b>Top Performers</b><br>(Potential Mentors)", showarrow=False, font=dict(color="darkgreen"))
     fig.add_annotation(x=mean_x*0.8, y=mean_y*0.8, text="<b>Underutilized</b><br>(Capacity for Growth)", showarrow=False, font=dict(color="darkblue"))
     fig.add_annotation(x=mean_x*0.8, y=mean_y*1.2, text="<b>Needs Coaching</b><br>(Efficiency Opportunity)", showarrow=False, font=dict(color="goldenrod"))
-    fig.update_traces(textposition='top center')
+    # THIS LINE IS NOW CORRECT (hovertemplate added here)
+    fig.update_traces(textposition='top center', hovertemplate="<b>%{text}</b><br>Audits: %{x}<br>Avg. Turnaround: %{y:.1f} days<br>Strain Index: %{marker.size:.1f}<extra></extra>")
     fig.update_layout(plot_bgcolor='white', height=500)
     return fig
 
