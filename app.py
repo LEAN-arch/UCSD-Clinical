@@ -126,18 +126,39 @@ def get_trial_risk_model(_portfolio_df):
     return model, encoder, X_final.columns
 
 def plot_spc_chart_sme(df, date_col, category_col, value, title):
+    # Filter data by category
     df_filtered = df[df[category_col] == value].copy()
     if df_filtered.empty:
         return go.Figure().update_layout(title=f'<b>{title}</b><br>No data available.')
+    
+    # Ensure date_col exists in df_filtered
+    if date_col not in df_filtered.columns:
+        st.error(f"Column '{date_col}' not found in the data. Available columns: {list(df_filtered.columns)}")
+        return go.Figure().update_layout(title=f'<b>{title}</b><br>Error: Date column missing.')
+    
+    # Set index and sort
     df_filtered = df_filtered.set_index(date_col).sort_index()
+    
     # Zero-fill missing months
     date_range = pd.date_range(start=df_filtered.index.min(), end=df_filtered.index.max(), freq='ME')
     monthly_counts = df_filtered.resample('ME').size().reindex(date_range, fill_value=0).reset_index(name='findings')
+    
+    # Verify column structure
+    if 'index' not in monthly_counts.columns:
+        st.error(f"Resampling failed: 'index' column not found in monthly_counts. Columns: {list(monthly_counts.columns)}")
+        return go.Figure().update_layout(title=f'<b>{title}</b><br>Error: Resampling failed.')
+    
+    # Create month column from 'index'
     monthly_counts['month'] = monthly_counts['index'].dt.to_period('M').astype(str)
+    
     if monthly_counts.empty or monthly_counts['findings'].sum() == 0:
         return go.Figure().update_layout(title=f'<b>{title}</b><br>No data available.')
+    
+    # Calculate control limits
     p_bar, std_dev = monthly_counts['findings'].mean(), np.sqrt(monthly_counts['findings'].mean())
     UCL, LCL = p_bar + 3 * std_dev, max(0, p_bar - 3 * std_dev)
+    
+    # Create Plotly figure
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=monthly_counts['month'], y=[UCL]*len(monthly_counts), mode='lines', line=dict(color='rgba(255, 100, 100, 0.5)'), showlegend=False, hoverinfo='none'))
     fig.add_trace(go.Scatter(x=monthly_counts['month'], y=[LCL]*len(monthly_counts), mode='lines', line=dict(color='rgba(255, 100, 100, 0.5)'), fill='tonexty', fillcolor='rgba(0, 176, 246, 0.1)', name='Common Cause Variation Zone', hoverinfo='none'))
@@ -145,10 +166,21 @@ def plot_spc_chart_sme(df, date_col, category_col, value, title):
     fig.add_trace(go.Scatter(x=monthly_counts['month'], y=[UCL]*len(monthly_counts), mode='lines', name='Upper Control Limit', line=dict(color='red', dash='dash')))
     fig.add_trace(go.Scatter(x=monthly_counts['month'], y=[LCL]*len(monthly_counts), mode='lines', name='Lower Control Limit', line=dict(color='red', dash='dash')))
     fig.add_trace(go.Scatter(x=monthly_counts['month'], y=monthly_counts['findings'], mode='lines+markers', name='Monthly Findings', line=dict(color='#005A9C'), hovertemplate="<b>%{x}</b><br>Findings: %{y}<br>Status: In Control<extra></extra>"))
+    
+    # Highlight out-of-control points
     out_of_control = monthly_counts[monthly_counts['findings'] > UCL]
     if not out_of_control.empty:
         fig.add_trace(go.Scatter(x=out_of_control['month'], y=out_of_control['findings'], mode='markers', name='Out of Control Signal', marker=dict(color='red', size=12, symbol='x', line=dict(width=3)), hovertemplate="<b>%{x}</b><br>Findings: %{y}<br>Status: <b>Out of Control</b><extra></extra>"))
-    fig.update_layout(title=f'<b>{title}</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    
+    # Update layout
+    fig.update_layout(
+        title=f'<b>{title}</b>',
+        xaxis_title=None,
+        yaxis_title='Number of Findings',
+        plot_bgcolor='white',
+        height=450,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
     return fig
 
 def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
