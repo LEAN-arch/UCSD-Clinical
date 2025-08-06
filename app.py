@@ -134,7 +134,12 @@ def plot_prophet_forecast_sme(forecast, monthly_df):
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill=None, mode='lines', line_color='rgba(62,193,211,0.2)', showlegend=False))
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
-    last_actual_date = monthly_df['ds'].iloc[-1]
+    
+    # ========= THE FIX IS HERE =========
+    # Convert the pandas Timestamp to a Python datetime object before passing to Plotly
+    last_actual_date = monthly_df['ds'].iloc[-1].to_pydatetime()
+    # ========= END OF FIX =========
+    
     fig.add_vline(x=last_actual_date, line_width=1, line_dash="dot", line_color="grey", annotation_text="Last Actual", annotation_position="top left")
     fig.update_layout(title='<b>12-Month Forecast of Audit Findings with Trend Analysis</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
@@ -253,7 +258,6 @@ def render_command_center(portfolio_df, findings_df, team_df):
             st.error(f"**Overdue CAPA:** Finding `{finding['Finding_ID']}` on trial `{finding['Trial_ID']}` ({finding['Risk_Level']}) is overdue.", icon="🔥")
         most_strained = team_df.sort_values(by='Strain', ascending=False).iloc[0]
         if most_strained['Strain'] > 3.0:
-             # BUG FIX #1: Replaced shortcode with a literal emoji
              st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon="⚠️")
         criticals_per_trial = findings_df[findings_df['Risk_Level'] == 'Critical'].groupby('Trial_ID').size().sort_values(ascending=False)
         if not criticals_per_trial.empty:
@@ -465,7 +469,6 @@ def main():
     if selected == "Home":
         render_command_center(portfolio_df, findings_df, team_df)
     elif selected == "Predictive Analytics":
-        # BUG FIX #2: Pass both required DataFrames to the function
         render_predictive_analytics(findings_df, portfolio_df)
     elif selected == "Systemic Risk":
         render_systemic_risk(findings_df, portfolio_df)
