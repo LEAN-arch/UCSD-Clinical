@@ -8,8 +8,6 @@ import io
 import time
 import logging
 
-# Removed Prophet to significantly speed up startup and remove heavy dependency
-# from prophet import Prophet
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from sklearn.linear_model import LogisticRegression
@@ -37,6 +35,7 @@ st.markdown("""
 # SECTION 1.5: SUPPRESS VERBOSE LOGGING
 # ======================================================================================
 logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
+logging.getLogger('prophet').setLevel(logging.WARNING)
 
 # ======================================================================================
 # SECTION 2: DATA SIMULATION
@@ -77,26 +76,6 @@ def get_trial_risk_model(_portfolio_df):
     model.fit(X_final, y)
     return model, encoder, X_final.columns
 
-def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
-    prs = Presentation(); prs.slide_width = Inches(16); prs.slide_height = Inches(9)
-    title_slide_layout = prs.slide_layouts[0]; slide = prs.slides.add_slide(title_slide_layout); slide.shapes.title.text = "MCC CTO Quality Assurance Executive Summary"; slide.placeholders[1].text = f"Report Generated: {datetime.date.today().strftime('%Y-%m-%d')}"
-    kpi_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(kpi_slide_layout); slide.shapes.title.text = "QA Program Health Dashboard"
-    positions = [(Inches(1), Inches(1.5)), (Inches(5), Inches(1.5)), (Inches(9), Inches(1.5)), (Inches(13), Inches(1.5))]
-    for i, (kpi_title, kpi_val, kpi_delta) in enumerate(kpi_data):
-        txBox = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2)); tf = txBox.text_frame; tf.word_wrap = True
-        p1 = tf.paragraphs[0]; p1.text = kpi_title; p1.font.bold = True; p1.font.size = Pt(20)
-        p2 = tf.add_paragraph(); p2.text = str(kpi_val); p2.font.size = Pt(44); p2.font.bold = True
-        p3 = tf.add_paragraph(); p3.text = str(kpi_delta); p3.font.size = Pt(16)
-    content_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(content_slide_layout); slide.shapes.title.text = "Systemic Process Control (SPC) Analysis"
-    image_stream = io.BytesIO(); spc_fig.write_image(image_stream, format='png', scale=2); image_stream.seek(0); slide.shapes.add_picture(image_stream, Inches(1), Inches(1.5), width=Inches(14))
-    table_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(table_slide_layout); slide.shapes.title.text = "High-Priority Open Findings (Critical/Major)"
-    rows, cols = findings_table_df.shape[0] + 1, findings_table_df.shape[1]; table = slide.shapes.add_table(rows, cols, Inches(1), Inches(1.5), Inches(14), Inches(0.5) * rows).table
-    for col_idx, col_name in enumerate(findings_table_df.columns): table.cell(0, col_idx).text = col_name
-    for ppt_row_idx, df_row in enumerate(findings_table_df.itertuples(index=False), start=1):
-        for col_idx, cell_data in enumerate(df_row): table.cell(ppt_row_idx, col_idx).text = str(cell_data)
-    ppt_stream = io.BytesIO(); prs.save(ppt_stream); ppt_stream.seek(0)
-    return ppt_stream
-
 def plot_spc_chart_sme(df, date_col, category_col, value, title):
     df_filtered = df[df[category_col] == value].copy()
     df_filtered = df_filtered.set_index(date_col).sort_index()
@@ -118,25 +97,49 @@ def plot_spc_chart_sme(df, date_col, category_col, value, title):
     fig.update_layout(title=f'<b>{title}</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
-def plot_auditor_strain_sme(team_df):
-    fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>Auditor Performance & Workload Quadrant Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround Time (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd, hovertemplate="<b>%{text}</b><br>Audits: %{x}<br>Avg. Turnaround: %{y:.1f} days<br>Strain Index: %{marker.size:.1f}<extra></extra>")
-    mean_x, mean_y = team_df['Audits_Conducted_YTD'].mean(), team_df['Avg_Report_Turnaround_Days'].mean()
-    fig.add_hline(y=mean_y, line_dash="dot", line_color="grey", annotation_text="Avg. Efficiency")
-    fig.add_vline(x=mean_x, line_dash="dot", line_color="grey", annotation_text="Avg. Workload")
-    fig.add_annotation(x=mean_x*1.2, y=mean_y*1.2, text="<b>High Strain</b><br>(At Risk of Burnout)", showarrow=False, font=dict(color="firebrick"))
-    fig.add_annotation(x=mean_x*1.2, y=mean_y*0.8, text="<b>Top Performers</b><br>(Potential Mentors)", showarrow=False, font=dict(color="darkgreen"))
-    fig.add_annotation(x=mean_x*0.8, y=mean_y*0.8, text="<b>Underutilized</b><br>(Capacity for Growth)", showarrow=False, font=dict(color="darkblue"))
-    fig.add_annotation(x=mean_x*0.8, y=mean_y*1.2, text="<b>Needs Coaching</b><br>(Efficiency Opportunity)", showarrow=False, font=dict(color="goldenrod"))
-    fig.update_traces(textposition='top center')
-    fig.update_layout(plot_bgcolor='white', height=500)
-    return fig
-
-def plot_pi_findings_barchart_sme(pi_findings, pi_name):
-    if pi_findings.empty: return go.Figure().update_layout(title=f'No findings recorded for {pi_name}', annotations=[dict(text="No Data", x=0.5, y=0.5, showarrow=False, font_size=20)])
-    category_counts = pi_findings['Category'].value_counts().reset_index(); category_counts.columns = ['Category', 'Count']
-    fig = px.bar(category_counts.sort_values('Count'), x='Count', y='Category', orientation='h', title=f'<b>Finding Breakdown for {pi_name}</b>', text='Count', labels={'Count': 'Number of Findings', 'Category': 'Finding Category'})
-    fig.update_traces(marker_color='#005A9C', textposition='outside'); fig.update_layout(plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
-    return fig
+def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
+    prs = Presentation()
+    prs.slide_width = Inches(16)
+    prs.slide_height = Inches(9)
+    title_slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_slide_layout)
+    slide.shapes.title.text = "MCC CTO Quality Assurance Executive Summary"
+    slide.placeholders[1].text = f"Report Generated: {datetime.date.today().strftime('%Y-%m-%d')}"
+    kpi_slide_layout = prs.slide_layouts[5]
+    slide = prs.slides.add_slide(kpi_slide_layout)
+    slide.shapes.title.text = "QA Program Health Dashboard"
+    positions = [(Inches(1), Inches(1.5)), (Inches(5), Inches(1.5)), (Inches(9), Inches(1.5)), (Inches(13), Inches(1.5))]
+    for i, (kpi_title, kpi_val, kpi_delta) in enumerate(kpi_data):
+        txBox = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2))
+        tf = txBox.text_frame; tf.word_wrap = True
+        p1 = tf.paragraphs[0]; p1.text = kpi_title; p1.font.bold = True; p1.font.size = Pt(20)
+        p2 = tf.add_paragraph(); p2.text = str(kpi_val); p2.font.size = Pt(44); p2.font.bold = True
+        p3 = tf.add_paragraph(); p3.text = str(kpi_delta); p3.font.size = Pt(16)
+    chart_slide_layout = prs.slide_layouts[5]
+    slide = prs.slides.add_slide(chart_slide_layout)
+    slide.shapes.title.text = "Systemic Process Control (SPC) Analysis"
+    try:
+        image_stream = io.BytesIO()
+        spc_fig.write_image(image_stream, format='png', scale=2)
+        image_stream.seek(0)
+        slide.shapes.add_picture(image_stream, Inches(1), Inches(1.5), width=Inches(14))
+    except Exception as e:
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(14), Inches(4))
+        tf = txBox.text_frame
+        p = tf.add_paragraph(); p.text = "Chart Generation Failed: Missing Dependency"; p.font.bold = True; p.font.size = Pt(24); p.font.color.rgb = RGBColor(255, 0, 0)
+        p = tf.add_paragraph(); p.text = ("The 'Kaleido' library requires Google Chrome/Chromium to export chart images. Please install it in your environment or use a self-contained version in requirements.txt (e.g., kaleido==0.1.0.post1)"); p.font.size = Pt(18)
+    table_slide_layout = prs.slide_layouts[5]
+    slide = prs.slides.add_slide(table_slide_layout)
+    slide.shapes.title.text = "High-Priority Open Findings (Critical/Major)"
+    rows, cols = findings_table_df.shape[0] + 1, findings_table_df.shape[1]
+    table = slide.shapes.add_table(rows, cols, Inches(1), Inches(1.5), Inches(14), Inches(0.5) * rows).table
+    for col_idx, col_name in enumerate(findings_table_df.columns): table.cell(0, col_idx).text = col_name
+    for ppt_row_idx, df_row in enumerate(findings_table_df.itertuples(index=False), start=1):
+        for col_idx, cell_data in enumerate(df_row): table.cell(ppt_row_idx, col_idx).text = str(cell_data)
+    ppt_stream = io.BytesIO()
+    prs.save(ppt_stream)
+    ppt_stream.seek(0)
+    return ppt_stream
 
 # ======================================================================================
 # SECTION 4: UI PAGE RENDERING FUNCTIONS
@@ -181,10 +184,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
 def render_predictive_analytics(portfolio_df):
     st.subheader("Predictive Analytics", divider="blue")
     st.markdown("_This section utilizes predictive modeling to quantify inherent trial risk, enabling a proactive, data-driven approach to quality management._")
-
-    # LAZY LOADING: The ML model is trained only when this page is visited for the first time.
     risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
-
     with st.container(border=True):
         st.markdown("##### Inherent Risk Prediction for New Trials")
         st.info("💡 **Expert Tip:** Use this tool to triage new protocols. A predicted risk score > 60% may warrant assigning a more senior auditor or increasing the monitoring frequency from the start.", icon="❓")
@@ -249,58 +249,17 @@ def render_systemic_risk(findings_df, portfolio_df):
 def render_pi_performance(portfolio_df, findings_df):
     st.subheader("Principal Investigator (PI) Performance Oversight", divider="blue")
     st.markdown("_This section enables granular analysis of quality metrics at the individual PI level, benchmarked against their Disease Team peers. It is a tool for targeted coaching and support._")
-    with st.container(border=True):
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("##### Select Investigator")
-            selected_team = st.selectbox("Select a Disease Team:", options=sorted(portfolio_df['Disease_Team'].unique()), key="team_select")
-            available_pis = sorted(portfolio_df[portfolio_df['Disease_Team'] == selected_team]['PI_Name'].unique())
-            selected_pi = st.selectbox("Select a PI:", options=available_pis, key="pi_select")
-        pi_findings = findings_df[findings_df['PI_Name'] == selected_pi]
-        team_findings = findings_df[findings_df['Disease_Team'] == selected_team]
-        with col2:
-            st.markdown(f"##### Performance Snapshot: {selected_pi}")
-            m_col1, m_col2, m_col3 = st.columns(3)
-            pi_major_findings = pi_findings[pi_findings['Risk_Level'].isin(['Major', 'Critical'])].shape[0]
-            team_avg_major_findings = team_findings[team_findings['Risk_Level'].isin(['Major', 'Critical'])].groupby('PI_Name').size().mean()
-            m_col1.metric("Major/Critical Findings", f"{pi_major_findings}", f"Team Avg: {team_avg_major_findings:.1f}", delta_color="inverse")
-            pi_avg_closure, team_avg_closure = pi_findings['Days_to_Close'].mean(), team_findings['Days_to_Close'].mean()
-            m_col2.metric("Avg. CAPA Closure (Days)", f"{pi_avg_closure:.1f}" if not np.isnan(pi_avg_closure) else "N/A", f"Team Avg: {team_avg_closure:.1f}", delta_color="inverse")
-            pi_overdue = pi_findings[pi_findings['CAPA_Status'] == 'Overdue'].shape[0]
-            team_avg_overdue = team_findings.groupby('PI_Name')['CAPA_Status'].apply(lambda x: (x == 'Overdue').sum()).mean()
-            m_col3.metric("Overdue CAPAs", f"{pi_overdue}", f"Team Avg: {team_avg_overdue:.1f}", delta_color="inverse")
-        st.markdown("---")
-        st.info(f"💡 **Expert Tip:** How does {selected_pi}'s performance compare to their team average? Significant deviations present a data-driven opportunity for a supportive coaching conversation.", icon="❓")
-        st.plotly_chart(plot_pi_findings_barchart_sme(pi_findings, selected_pi), use_container_width=True)
+    # (Full rendering code is in the main function block below for completeness)
 
 def render_organizational_capability(team_df, initiatives_df):
     st.subheader("Organizational Capability & Strategic Oversight", divider="blue")
     st.markdown("_This section assesses the capacity of the QA team and tracks progress and financial health of key strategic objectives._")
-    with st.container(border=True):
-        st.markdown("##### Auditor Workload & Performance Analysis")
-        st.info("💡 **Expert Tip:** Use the quadrants to guide management. 'High Strain' auditors may need workload redistribution. 'Top Performers' are candidates for mentoring others. 'Needs Coaching' auditors could benefit from targeted training to improve efficiency.", icon="❓")
-        st.plotly_chart(plot_auditor_strain_sme(team_df), use_container_width=True)
-    with st.container(border=True):
-        st.markdown("##### Strategic Initiatives & Financial Oversight")
-        st.info("💡 **Expert Tip:** A CPI or SPI value < 1.0 indicates a project is over budget or behind schedule, respectively. This allows for proactive intervention before projects go significantly off-track.", icon="❓")
-        today = pd.to_datetime(datetime.date.today())
-        initiatives_df['Days_Elapsed'] = (today - initiatives_df['Start_Date']).dt.days
-        initiatives_df['Total_Days_Planned'] = (initiatives_df['End_Date'] - initiatives_df['Start_Date']).dt.days
-        initiatives_df['Daily_Burn_Rate'] = initiatives_df.apply(lambda row: row['Spent_USD'] / row['Days_Elapsed'] if row['Days_Elapsed'] > 0 else 0, axis=1)
-        initiatives_df['Projected_Total_Cost'] = initiatives_df['Daily_Burn_Rate'] * initiatives_df['Total_Days_Planned']
-        initiatives_df['Projected_Over_Under'] = initiatives_df['Budget_USD'] - initiatives_df['Projected_Total_Cost']
-        initiatives_df['CPI'] = initiatives_df.apply(lambda row: (row['Budget_USD'] * row['Percent_Complete']/100) / row['Spent_USD'] if row['Spent_USD'] > 0 else 0, axis=1)
-        initiatives_df['SPI'] = initiatives_df.apply(lambda row: (row['Percent_Complete']/100) / (row['Days_Elapsed']/row['Total_Days_Planned']) if row['Days_Elapsed'] > 0 and row['Total_Days_Planned'] > 0 else 0, axis=1)
-        def format_financials(df):
-            return df.style.format({'Budget_USD': "${:,.0f}", 'Spent_USD': "${:,.0f}", 'Projected_Total_Cost': "${:,.0f}", 'Projected_Over_Under': "${:,.0f}", 'Daily_Burn_Rate': "${:,.2f}", 'CPI': "{:.2f}", 'SPI': "{:.2f}"}).background_gradient(cmap='RdYlGn', subset=['Projected_Over_Under']).background_gradient(cmap='RdYlGn', vmin=0.8, vmax=1.2, subset=['CPI', 'SPI']).bar(subset=['Percent_Complete'], color='#5cadff', vmin=0, vmax=100)
-        st.dataframe(format_financials(initiatives_df[['Initiative', 'Lead', 'Status', 'Percent_Complete', 'Budget_USD', 'Spent_USD', 'Projected_Total_Cost', 'Projected_Over_Under', 'CPI', 'SPI']]), use_container_width=True)
-        st.caption("CPI (Cost Performance Index) & SPI (Schedule Performance Index): > 1.0 is favorable (green), < 1.0 is unfavorable (red).")
+    # (Full rendering code is in the main function block below for completeness)
 
 # ======================================================================================
 # SECTION 5: MAIN APP ORCHESTRATION
 # ======================================================================================
 def main():
-    # --- Sidebar Navigation & Controls ---
     with st.sidebar:
         st.markdown("## Moores Cancer Center")
         st.markdown("### Clinical Trials Office")
@@ -312,40 +271,36 @@ def main():
             menu_icon="kanban-fill", default_index=0
         )
         st.markdown("---")
-        st.info("This dashboard demonstrates a proactive, data-driven approach to Clinical QA management.")
+        st.info("This dashboard is a prototype demonstrating a proactive, data-driven approach to Clinical QA management.")
 
-        # --- Executive Report Generator ---
         st.header("Generate Executive Report")
         st.info("Download a PowerPoint summary of the current QA program status for leadership review.")
-        portfolio_df, findings_df, team_df, _ = generate_master_data()
+        portfolio_df_sidebar, findings_df_sidebar, team_df_sidebar, _ = generate_master_data()
         risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
-        open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
-        open_findings['Risk_Score'] = open_findings['Risk_Level'].map(risk_weights)
-        total_risk_score = int(open_findings['Risk_Score'].sum())
-        overdue_major_capas = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].shape[0]
-        readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0] * 5))
-        team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / 100
-        avg_strain = team_df['Strain'].mean()
-        kpi_data_for_report = [("Portfolio Risk Score", total_risk_score, f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals"), ("Inspection Readiness", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs"), ("Resource Strain Index", f"{avg_strain:.2f}", "Target < 4.0")]
-        findings_for_report = findings_df[(findings_df['Risk_Level'].isin(['Major', 'Critical'])) & (findings_df['CAPA_Status'] != 'Closed-Effective')][['Trial_ID', 'Category', 'Risk_Level', 'CAPA_Status']].head(10)
-        default_spc_fig = plot_spc_chart_sme(findings_df, 'Finding_Date', 'Category', 'Informed Consent Process', "SPC Chart: Informed Consent Findings")
+        open_findings_sidebar = findings_df_sidebar[~findings_df_sidebar['CAPA_Status'].isin(['Closed-Effective'])].copy()
+        open_findings_sidebar['Risk_Score'] = open_findings_sidebar['Risk_Level'].map(risk_weights)
+        total_risk_score_sidebar = int(open_findings_sidebar['Risk_Score'].sum())
+        overdue_major_capas_sidebar = findings_df_sidebar[(findings_df_sidebar['CAPA_Status'] == 'Overdue') & (findings_df_sidebar['Risk_Level'] != 'Minor')].shape[0]
+        readiness_score_sidebar = max(0, 100 - (overdue_major_capas_sidebar * 10) - (open_findings_sidebar[open_findings_sidebar['Risk_Level'] == 'Critical'].shape[0] * 5))
+        team_df_sidebar['Strain'] = (team_df_sidebar['Audits_Conducted_YTD'] * team_df_sidebar['Avg_Report_Turnaround_Days']) / 100
+        avg_strain_sidebar = team_df_sidebar['Strain'].mean()
+        kpi_data_for_report = [("Portfolio Risk Score", total_risk_score_sidebar, f"{open_findings_sidebar[open_findings_sidebar['Risk_Level'] == 'Critical'].shape[0]} Open Criticals"), ("Inspection Readiness", f"{readiness_score_sidebar}%", f"{overdue_major_capas_sidebar} Overdue Major CAPAs"), ("Resource Strain Index", f"{avg_strain_sidebar:.2f}", "Target < 4.0")]
+        findings_for_report = findings_df_sidebar[(findings_df_sidebar['Risk_Level'].isin(['Major', 'Critical'])) & (findings_df_sidebar['CAPA_Status'] != 'Closed-Effective')][['Trial_ID', 'Category', 'Risk_Level', 'CAPA_Status']].head(10)
+        default_spc_fig = plot_spc_chart_sme(findings_df_sidebar, 'Finding_Date', 'Category', 'Informed Consent Process', "SPC Chart: Informed Consent Findings")
         ppt_buffer = generate_ppt_report(kpi_data_for_report, default_spc_fig, findings_for_report)
         st.download_button(label="📥 Download PowerPoint Report", data=ppt_buffer, file_name=f"MCC_CTO_QA_Summary_{datetime.date.today()}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
         st.markdown("---")
         st.markdown("### Key Concepts & Regulations")
-        st.markdown("- **RBQM:** Risk-Based Quality Management (ICH E6)\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice (ICH E6)\n- **21 CFR Part 50:** Protection of Human Subjects\n- **21 CFR Part 312:** Investigational New Drug\n- **CAPA:** Corrective and Preventive Action")
+        st.markdown("- **RBQM:** Risk-Based Quality Management\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice\n- **21 CFR Part 50 & 312:** Key FDA Regulations")
 
-    # --- Main Content Area ---
     st.title("🔬 Scientific QA Command Center")
     st.markdown("An advanced analytics dashboard for the Assistant Director of Quality Assurance.")
 
-    # --- Data Loading (Fast part only) ---
     portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
     findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
     findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
 
-    # --- Page Routing ---
     if selected == "Home":
         render_command_center(portfolio_df, findings_df, team_df)
     elif selected == "Predictive Analytics":
@@ -353,9 +308,55 @@ def main():
     elif selected == "Systemic Risk":
         render_systemic_risk(findings_df, portfolio_df)
     elif selected == "PI Performance":
-        render_pi_performance(portfolio_df, findings_df)
+        # Full render code for this page
+        st.subheader("Principal Investigator (PI) Performance Oversight", divider="blue")
+        st.markdown("_This section enables granular analysis of quality metrics at the individual PI level, benchmarked against their Disease Team peers. It is a tool for targeted coaching and support._")
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("##### Select Investigator")
+                selected_team = st.selectbox("Select a Disease Team:", options=sorted(portfolio_df['Disease_Team'].unique()), key="team_select")
+                available_pis = sorted(portfolio_df[portfolio_df['Disease_Team'] == selected_team]['PI_Name'].unique())
+                selected_pi = st.selectbox("Select a PI:", options=available_pis, key="pi_select")
+            pi_findings = findings_df[findings_df['PI_Name'] == selected_pi]
+            team_findings = findings_df[findings_df['Disease_Team'] == selected_team]
+            with col2:
+                st.markdown(f"##### Performance Snapshot: {selected_pi}")
+                m_col1, m_col2, m_col3 = st.columns(3)
+                pi_major_findings = pi_findings[pi_findings['Risk_Level'].isin(['Major', 'Critical'])].shape[0]
+                team_avg_major_findings = team_findings[team_findings['Risk_Level'].isin(['Major', 'Critical'])].groupby('PI_Name').size().mean()
+                m_col1.metric("Major/Critical Findings", f"{pi_major_findings}", f"Team Avg: {team_avg_major_findings:.1f}", delta_color="inverse")
+                pi_avg_closure, team_avg_closure = pi_findings['Days_to_Close'].mean(), team_findings['Days_to_Close'].mean()
+                m_col2.metric("Avg. CAPA Closure (Days)", f"{pi_avg_closure:.1f}" if not np.isnan(pi_avg_closure) else "N/A", f"Team Avg: {team_avg_closure:.1f}", delta_color="inverse")
+                pi_overdue = pi_findings[pi_findings['CAPA_Status'] == 'Overdue'].shape[0]
+                team_avg_overdue = team_findings.groupby('PI_Name')['CAPA_Status'].apply(lambda x: (x == 'Overdue').sum()).mean()
+                m_col3.metric("Overdue CAPAs", f"{pi_overdue}", f"Team Avg: {team_avg_overdue:.1f}", delta_color="inverse")
+            st.markdown("---")
+            st.info(f"💡 **Expert Tip:** How does {selected_pi}'s performance compare to their team average? Significant deviations present a data-driven opportunity for a supportive coaching conversation.", icon="❓")
+            st.plotly_chart(plot_pi_findings_barchart_sme(pi_findings, selected_pi), use_container_width=True)
     elif selected == "Team & Strategy":
-        render_organizational_capability(team_df, initiatives_df)
+        # Full render code for this page
+        st.subheader("Organizational Capability & Strategic Oversight", divider="blue")
+        st.markdown("_This section assesses the capacity of the QA team and tracks progress and financial health of key strategic objectives._")
+        with st.container(border=True):
+            st.markdown("##### Auditor Workload & Performance Analysis")
+            st.info("💡 **Expert Tip:** Use the quadrants to guide management. 'High Strain' auditors may need workload redistribution. 'Top Performers' are candidates for mentoring others. 'Needs Coaching' auditors could benefit from targeted training to improve efficiency.", icon="❓")
+            st.plotly_chart(plot_auditor_strain_sme(team_df), use_container_width=True)
+        with st.container(border=True):
+            st.markdown("##### Strategic Initiatives & Financial Oversight")
+            st.info("💡 **Expert Tip:** A CPI or SPI value < 1.0 indicates a project is over budget or behind schedule, respectively. This allows for proactive intervention before projects go significantly off-track.", icon="❓")
+            today = pd.to_datetime(datetime.date.today())
+            initiatives_df['Days_Elapsed'] = (today - initiatives_df['Start_Date']).dt.days
+            initiatives_df['Total_Days_Planned'] = (initiatives_df['End_Date'] - initiatives_df['Start_Date']).dt.days
+            initiatives_df['Daily_Burn_Rate'] = initiatives_df.apply(lambda row: row['Spent_USD'] / row['Days_Elapsed'] if row['Days_Elapsed'] > 0 else 0, axis=1)
+            initiatives_df['Projected_Total_Cost'] = initiatives_df['Daily_Burn_Rate'] * initiatives_df['Total_Days_Planned']
+            initiatives_df['Projected_Over_Under'] = initiatives_df['Budget_USD'] - initiatives_df['Projected_Total_Cost']
+            initiatives_df['CPI'] = initiatives_df.apply(lambda row: (row['Budget_USD'] * row['Percent_Complete']/100) / row['Spent_USD'] if row['Spent_USD'] > 0 else 0, axis=1)
+            initiatives_df['SPI'] = initiatives_df.apply(lambda row: (row['Percent_Complete']/100) / (row['Days_Elapsed']/row['Total_Days_Planned']) if row['Days_Elapsed'] > 0 and row['Total_Days_Planned'] > 0 else 0, axis=1)
+            def format_financials(df):
+                return df.style.format({'Budget_USD': "${:,.0f}", 'Spent_USD': "${:,.0f}", 'Projected_Total_Cost': "${:,.0f}", 'Projected_Over_Under': "${:,.0f}", 'Daily_Burn_Rate': "${:,.2f}", 'CPI': "{:.2f}", 'SPI': "{:.2f}"}).background_gradient(cmap='RdYlGn', subset=['Projected_Over_Under']).background_gradient(cmap='RdYlGn', vmin=0.8, vmax=1.2, subset=['CPI', 'SPI']).bar(subset=['Percent_Complete'], color='#5cadff', vmin=0, vmax=100)
+            st.dataframe(format_financials(initiatives_df[['Initiative', 'Lead', 'Status', 'Percent_Complete', 'Budget_USD', 'Spent_USD', 'Projected_Total_Cost', 'Projected_Over_Under', 'CPI', 'SPI']]), use_container_width=True)
+            st.caption("CPI (Cost Performance Index) & SPI (Schedule Performance Index): > 1.0 is favorable (green), < 1.0 is unfavorable (red).")
 
 if __name__ == "__main__":
     main()
