@@ -10,7 +10,7 @@ import logging
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
+from pptx.dml.color import RGBColor # Import for coloring error text in PPTX
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import OneHotEncoder
 from streamlit_option_menu import option_menu
@@ -118,16 +118,20 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     chart_slide_layout = prs.slide_layouts[5]
     slide = prs.slides.add_slide(chart_slide_layout)
     slide.shapes.title.text = "Systemic Process Control (SPC) Analysis"
+    # ========= ROBUST CRASH-FIX IS IMPLEMENTED HERE =========
     try:
         image_stream = io.BytesIO()
         spc_fig.write_image(image_stream, format='png', scale=2)
         image_stream.seek(0)
         slide.shapes.add_picture(image_stream, Inches(1), Inches(1.5), width=Inches(14))
     except (RuntimeError, ValueError) as e:
+        # If image generation fails, insert a helpful error slide instead of crashing.
         txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(14), Inches(4))
         tf = txBox.text_frame
         p = tf.add_paragraph(); p.text = "Chart Generation Failed: Missing Dependency"; p.font.bold = True; p.font.size = Pt(24); p.font.color.rgb = RGBColor(255, 0, 0)
-        p = tf.add_paragraph(); p.text = ("The 'Kaleido' library requires Google Chrome/Chromium to export this chart. Please update the environment.\nFor prototypes, the recommended fix is to specify a self-contained version in requirements.txt:\n\n'kaleido==0.1.0.post1'"); p.font.size = Pt(18)
+        p = tf.add_paragraph(); p.text = ("The 'Kaleido' library requires Google Chrome/Chromium to export this chart. The app environment is likely missing this dependency.\n"
+                                          "To fix for a prototype, update requirements.txt with the self-contained version:\n\n'kaleido==0.1.0.post1'"); p.font.size = Pt(18)
+    # ========= END OF FIX =========
     table_slide_layout = prs.slide_layouts[5]
     slide = prs.slides.add_slide(table_slide_layout)
     slide.shapes.title.text = "High-Priority Open Findings (Critical/Major)"
@@ -353,7 +357,7 @@ def main():
 
         st.markdown("---")
         st.markdown("### Key Concepts & Regulations")
-        st.markdown("- **RBQM:** Risk-Based Quality Management\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice\n- **21 CFR Part 50 & 312:** Key FDA Regulations")
+        st.markdown("- **RBQM:** Risk-Based Quality Management\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice\n- **2CFR Part 50 & 312:** Key FDA Regulations")
 
     st.title("🔬 Scientific QA Command Center")
     st.markdown("An advanced analytics dashboard for the Assistant Director of Quality Assurance.")
