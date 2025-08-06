@@ -148,7 +148,7 @@ def plot_spc_chart_sme(df, date_col, category_col, value, title):
         st.error(f"Resampling failed: 'index' column not found in monthly_counts. Columns: {list(monthly_counts.columns)}")
         return go.Figure().update_layout(title=f'<b>{title}</b><br>Error: Resampling failed.')
     
-    # Create month column from 'index'
+    # Create month column from 'index' - THIS IS THE CORRECTED LOGIC
     monthly_counts['month'] = monthly_counts['index'].dt.to_period('M').astype(str)
     
     if monthly_counts.empty or monthly_counts['findings'].sum() == 0:
@@ -182,7 +182,7 @@ def plot_spc_chart_sme(df, date_col, category_col, value, title):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     return fig
-
+    
 def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     try:
         prs = Presentation()
