@@ -133,7 +133,8 @@ def plot_spc_chart_sme(df, date_col, category_col, value, title):
     # Zero-fill missing months
     date_range = pd.date_range(start=df_filtered.index.min(), end=df_filtered.index.max(), freq='ME')
     monthly_counts = df_filtered.resample('ME').size().reindex(date_range, fill_value=0).reset_index(name='findings')
-    monthly_counts['month'] = monthly_counts[date_col].dt.to_period('M').astype(str)
+    # Use 'index' as the date column name after reindex
+    monthly_counts['month'] = monthly_counts['index'].dt.to_period('M').astype(str)
     if monthly_counts.empty or monthly_counts['findings'].sum() == 0:
         return go.Figure().update_layout(title=f'<b>{title}</b><br>No data available.')
     p_bar, std_dev = monthly_counts['findings'].mean(), np.sqrt(monthly_counts['findings'].mean())
