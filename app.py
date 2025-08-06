@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import datetime
 import io
 import time
+import logging
 
 from prophet import Prophet
 from pptx import Presentation
@@ -33,6 +34,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ======================================================================================
+# SECTION 1.5: SUPPRESS VERBOSE LOGGING
+# Silences informational messages from Prophet's backend (cmdstanpy) for a cleaner output.
+# ======================================================================================
+logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
+
 
 # ======================================================================================
 # SECTION 2: DATA SIMULATION & PRE-COMPUTATION
@@ -44,26 +51,18 @@ def generate_master_data():
     trial_ids = [f'MCC-{t}-{i:03d}' for t in ['IIT', 'IND', 'COG'] for i in range(1, 11)] + [f'INDUSTRY-{c}-{i:03d}' for c in ['PFE', 'BMY', 'MRK'] for i in range(1, 11)]
     portfolio_data = {'Trial_ID': trial_ids, 'Trial_Type': np.random.choice(['Investigator-Initiated (IIT)', 'Industry-Sponsored', 'Cooperative Group'], num_trials, p=[0.4, 0.4, 0.2]), 'Phase': np.random.choice(['I', 'I/II', 'II', 'III'], num_trials, p=[0.2, 0.3, 0.4, 0.1]), 'Disease_Team': np.random.choice(['Leukemia', 'Lung', 'Breast', 'GI', 'GU', 'Melanoma'], num_trials), 'Status': np.random.choice(['Enrolling', 'Follow-up', 'Closed to Accrual', 'Suspended'], num_trials, p=[0.6, 0.2, 0.15, 0.05]), 'Subjects_Enrolled': np.random.randint(5, 100, num_trials), 'PI_Experience_Level': np.random.choice(['Expert', 'Intermediate', 'New'], num_trials, p=[0.3, 0.5, 0.2]), 'Is_First_In_Human': np.random.choice([True, False], num_trials, p=[0.1, 0.9]), 'Num_Sites': np.random.choice([1, 2, 5], num_trials, p=[0.8, 0.15, 0.05])}
     portfolio_df = pd.DataFrame(portfolio_data)
-
-    # Add PI Names
     pis_by_team = {team: [f'Dr. {team_initials}{i}' for i in range(1,5)] for team, team_initials in zip(portfolio_df['Disease_Team'].unique(), ['L', 'U', 'B', 'GI', 'GU', 'M'])}
     portfolio_df['PI_Name'] = portfolio_df.apply(lambda row: np.random.choice(pis_by_team[row['Disease_Team']]), axis=1)
-
-    num_findings = 250
     finding_categories = ['Informed Consent Process', 'Source Data Verification', 'Investigational Product Accountability', 'Regulatory Binder Mgmt', 'AE/SAE Reporting', 'Protocol Adherence']
-    findings_data = {'Finding_ID': [f'FIND-{i:04d}' for i in range(1, num_findings + 1)], 'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], num_findings), 'Category': np.random.choice(finding_categories, num_findings, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]), 'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], num_findings, p=[0.05, 0.35, 0.6]), 'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], num_findings, p=[0.15, 0.1, 0.7, 0.05]), 'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 700, num_findings)])}
+    findings_data = {'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)], 'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], 250), 'Category': np.random.choice(finding_categories, 250, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]), 'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], 250, p=[0.05, 0.35, 0.6]), 'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], 250, p=[0.15, 0.1, 0.7, 0.05]), 'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 700, 250)])}
     findings_df = pd.DataFrame(findings_data).merge(portfolio_df[['Trial_ID', 'Disease_Team', 'Trial_Type', 'PI_Name']], on='Trial_ID', how='left')
-
     major_finding_trials = findings_df[findings_df['Risk_Level'].isin(['Major', 'Critical'])]['Trial_ID'].unique()
     portfolio_df['Had_Major_Finding'] = portfolio_df['Trial_ID'].isin(major_finding_trials).astype(int)
-
     auditors = ['Jane Doe, RN', 'John Smith, PhD', 'Maria Garcia, MPH', 'Kevin Lee, CCRC']
     team_data = {'Auditor': auditors, 'Audits_Conducted_YTD': np.random.randint(15, 30, len(auditors)), 'Avg_Report_Turnaround_Days': np.random.uniform(8, 20, len(auditors)), 'GCP_Certification_Status': np.random.choice(['Current', 'Expires <90d'], len(auditors), p=[0.75, 0.25]), 'IIT_Oversight_Skill': np.random.randint(3, 6, len(auditors)), 'FDA_Inspection_Mgmt_Skill': np.random.randint(2, 5, len(auditors))}
     team_df = pd.DataFrame(team_data)
-
     initiatives_data = {'Initiative': ['eQMS Implementation', 'Auditor Training Program Revamp', 'Inspection Readiness Mock Audits', 'IIT Risk-Based Monitoring Plan'], 'Lead': ['Jane Doe, RN', 'John Smith, PhD', 'Maria Garcia, MPH', 'Kevin Lee, CCRC'], 'Status': ['On Track', 'At Risk', 'Completed', 'On Track'], 'Percent_Complete': [60, 85, 100, 30], 'Start_Date': pd.to_datetime(['2023-01-15', '2023-03-01', '2023-06-01', '2023-09-01']), 'End_Date': pd.to_datetime(['2024-06-30', '2023-11-30', '2023-08-31', '2024-03-31']), 'Budget_USD': [75000, 15000, 25000, 10000], 'Spent_USD': [40000, 14000, 23500, 2500]}
     initiatives_df = pd.DataFrame(initiatives_data)
-
     return portfolio_df, findings_df, team_df, initiatives_df
 
 # ======================================================================================
@@ -128,9 +127,10 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     kpi_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(kpi_slide_layout); slide.shapes.title.text = "QA Program Health Dashboard"
     positions = [(Inches(1), Inches(1.5)), (Inches(5), Inches(1.5)), (Inches(9), Inches(1.5)), (Inches(13), Inches(1.5))]
     for i, (kpi_title, kpi_val, kpi_delta) in enumerate(kpi_data):
-        p = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2)).text_frame.add_paragraph(); p.text = kpi_title; p.font.bold = True; p.font.size = Pt(20)
-        p = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2)).text_frame.add_paragraph(); p.text = str(kpi_val); p.font.size = Pt(44); p.font.bold = True; p.margin_top = Inches(0.5)
-        p = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2)).text_frame.add_paragraph(); p.text = str(kpi_delta); p.font.size = Pt(16); p.margin_top = Inches(1.5)
+        txBox = slide.shapes.add_textbox(positions[i][0], positions[i][1], Inches(3.5), Inches(2)); tf = txBox.text_frame; tf.word_wrap = True
+        p1 = tf.paragraphs[0]; p1.text = kpi_title; p1.font.bold = True; p1.font.size = Pt(20)
+        p2 = tf.add_paragraph(); p2.text = str(kpi_val); p2.font.size = Pt(44); p2.font.bold = True
+        p3 = tf.add_paragraph(); p3.text = str(kpi_delta); p3.font.size = Pt(16)
     content_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(content_slide_layout); slide.shapes.title.text = "Systemic Process Control (SPC) Analysis"
     image_stream = io.BytesIO(); spc_fig.write_image(image_stream, format='png', scale=2); image_stream.seek(0); slide.shapes.add_picture(image_stream, Inches(1), Inches(1.5), width=Inches(14))
     table_slide_layout = prs.slide_layouts[5]; slide = prs.slides.add_slide(table_slide_layout); slide.shapes.title.text = "High-Priority Open Findings (Critical/Major)"
@@ -142,7 +142,7 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     return ppt_stream
 
 # ======================================================================================
-# SECTION 4: MAIN APPLICATION LAYOUT & SCIENTIFIC NARRATIVE
+# SECTION 4: MAIN APPLICATION LAYOUT & LOGIC
 # ======================================================================================
 st.title("🔬 MCC CTO Scientific QA Command Center")
 st.markdown("##### An advanced analytics dashboard for strategic quality oversight, forecasting, and reporting.")
@@ -151,8 +151,6 @@ st.markdown("##### An advanced analytics dashboard for strategic quality oversig
 portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
 risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
 forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
-
-# Calculate CAPA closure times
 findings_df['Finding_Date'] = pd.to_datetime(findings_df['Finding_Date'])
 findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
 findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
@@ -184,12 +182,12 @@ with tab1:
     with col1:
         st.subheader("A. Time-Series Forecast of Audit Finding Volume")
         with st.expander("View Methodological Summary"):
-            st.markdown("- **Purpose:** To forecast future operational workload and identify long-term trends in quality event reporting.\n- **Method:** An additive time-series model (`Prophet`) decomposes historical finding counts into trend and seasonality to project volumes for the next 12 months.\n- **Interpretation:** The solid line is the median forecast (`yhat`); the shaded area is the 80% uncertainty interval. An upward trend may signal a need for more resources.")
+            st.markdown("- **Purpose:** To forecast future operational workload.\n- **Method:** An additive time-series model (`Prophet`) projects volumes for the next 12 months.\n- **Interpretation:** An upward trend may signal a need for more resources.")
         st.plotly_chart(plot_prophet_forecast(forecast_data, actual_monthly_data), use_container_width=True)
     with col2:
         st.subheader("B. Inherent Risk Prediction for New Trials")
         with st.expander("View Methodological Summary"):
-            st.markdown("- **Purpose:** To quantify the *a priori* risk of a new trial generating major findings, aligning with Risk-Based Quality Management (RBQM).\n- **Method:** A multivariate logistic regression model was trained on the historical portfolio. The outcome is the presence/absence of a major/critical finding.\n- **Interpretation:** The resulting probability score allows for triaging new protocols into risk tiers, optimizing resource allocation.")
+            st.markdown("- **Purpose:** To quantify a priori trial risk, aligning with RBQM.\n- **Method:** A logistic regression model predicts the probability of a major finding.\n- **Interpretation:** The score allows for triaging new protocols into risk tiers, optimizing resource allocation.")
         p_type = st.selectbox("Trial Type", portfolio_df['Trial_Type'].unique(), key='p_type')
         p_phase = st.selectbox("Trial Phase", portfolio_df['Phase'].unique(), key='p_phase')
         p_pi_exp = st.selectbox("PI Experience", portfolio_df['PI_Experience_Level'].unique(), key='p_pi')
@@ -207,20 +205,19 @@ with tab2:
     with col1:
         st.subheader("A. Statistical Process Control (SPC) Analysis")
         with st.expander("View Methodological Summary"):
-            st.markdown("- **Purpose:** To monitor process stability and distinguish between random variation (**common cause**) and significant deviations (**special cause**).\n- **Method:** A Shewhart c-chart is used. Control Limits (UCL/LCL) are set at ±3 standard deviations from the mean.\n- **Interpretation:** A point outside the UCL (red 'X') is a statistically significant signal requiring Root Cause Analysis (RCA).")
+            st.markdown("- **Purpose:** To distinguish between random variation and significant deviations.\n- **Method:** A Shewhart c-chart with 3-sigma control limits.\n- **Interpretation:** A point outside the limits (red 'X') requires Root Cause Analysis (RCA).")
         category_to_monitor = st.selectbox("Select Finding Category to Analyze for Trends:", options=findings_df['Category'].unique())
         st.plotly_chart(plot_spc_chart(findings_df, 'Finding_Date', 'Category', category_to_monitor, f"SPC c-Chart for '{category_to_monitor}' Findings"), use_container_width=True)
     with col2:
         st.subheader("B. Finding Concentration Analysis by Disease Team")
         with st.expander("View Methodological Summary"):
-            st.markdown("- **Purpose:** To identify non-random associations between Disease Teams and finding categories.\n- **Method:** A heatmap visualizes a contingency table of finding counts.\n- **Interpretation:** 'Hot spots' suggest localized process gaps, enabling targeted interventions over broad, less efficient ones.")
+            st.markdown("- **Purpose:** To identify non-random associations between Teams and finding types.\n- **Method:** A heatmap of finding counts.\n- **Interpretation:** 'Hot spots' suggest localized process gaps, enabling targeted interventions.")
         st.plotly_chart(plot_findings_heatmap_by_team(findings_df), use_container_width=True)
 
     st.markdown("---")
     st.subheader("C. Interactive Regulatory Inspection Simulation")
     with st.expander("View Methodological Summary"):
-        st.markdown("- **Purpose:** To pressure-test the CTO's operational readiness for a 'live fire' regulatory inspection (e.g., FDA).\n- **Method:** A mock document database simulates the linkage between a CTMS and an eTMF, retrieving documents on demand.\n- **Interpretation:** This tool transforms the abstract concept of 'readiness' into a tangible, measurable capability for training and gap analysis.")
-
+        st.markdown("- **Purpose:** To pressure-test operational readiness for a 'live fire' inspection.\n- **Method:** A mock eTMF retrieval system.\n- **Interpretation:** Transforms 'readiness' from an abstract concept into a tangible, measurable capability.")
     @st.cache_data
     def create_mock_etmf(portfolio_df):
         mock_etmf = {}
@@ -229,19 +226,21 @@ with tab2:
             mock_etmf[trial_id] = {"Protocol Signature Page": f"DocRef_PSP_{trial_id}.pdf", "IRB Approval Letter": f"DocRef_IRB_Approval_{trial_id}.pdf", "FDA Form 1572": f"DocRef_1572_{trial_id}.pdf" if "IIT" in trial_id or "IND" in trial_id else "N/A", "Informed Consent Forms": {f"Subject-{i:03d}": f"ICF_{trial_id}_Subj_{i:03d}.pdf" for i in range(1, num_subjects + 1)}, "Serious Adverse Event Reports": {f"SAE-{i:03d}": f"SAE_{trial_id}_{i:03d}.pdf" for i in range(1, np.random.randint(2, 6))}}
         return mock_etmf
     mock_etmf_db = create_mock_etmf(portfolio_df)
-
     sim_col1, sim_col2 = st.columns([1, 2])
     with sim_col1:
         st.write("**Inspection Scenario:**")
         trial_to_inspect = st.selectbox("Select a Trial to Inspect:", options=portfolio_df['Trial_ID'], key="inspect_trial")
         subject_list = list(mock_etmf_db[trial_to_inspect]["Informed Consent Forms"].keys())
-        if subject_list: subject_to_inspect = st.selectbox("Select a Subject:", options=subject_list, key="inspect_subject")
-    if st.button("🔬 Pull Subject's Consent Form"):
+        if subject_list:
+            subject_to_inspect = st.selectbox("Select a Subject:", options=subject_list, key="inspect_subject")
+        else:
+            subject_to_inspect = None
+
+    if subject_to_inspect and st.button("🔬 Pull Subject's Consent Form"):
         with sim_col2:
             st.info(f"Request: 'Please provide the signed consent form for {subject_to_inspect} on trial {trial_to_inspect}.'")
             with st.spinner("Searching eTMF..."): time.sleep(1.5)
-            doc_ref = mock_etmf_db[trial_to_inspect]["Informed Consent Forms"].get(subject_to_inspect)
-            st.success("**Document Found!**"); st.code(f"File Path: /eTMF/Trials/{trial_to_inspect}/Subject_Files/{subject_to_inspect}/{doc_ref}\nAccessed: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", language="bash")
+            st.success("**Document Found!**"); st.code(f"File Path: /eTMF/Trials/{trial_to_inspect}/Subject_Files/{subject_to_inspect}/ICF_{trial_to_inspect}_Subj_{subject_to_inspect.split('-')[1]}.pdf\nAccessed: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", language="bash")
     if st.button("📄 Pull Trial's 1572 Form"):
         with sim_col2:
             st.info(f"Request: 'Please provide the current FDA Form 1572 for trial {trial_to_inspect}.'")
@@ -273,15 +272,17 @@ with tab3:
         m_col3.metric("Overdue CAPAs", f"{pi_overdue}", f"Team Avg: {team_avg_overdue:.1f}", delta_color="inverse")
     st.markdown("---")
     st.subheader(f"Findings Breakdown for {selected_pi}")
-    if pi_findings.empty: st.warning(f"No findings recorded for {selected_pi}.")
-    else: st.plotly_chart(px.pie(pi_findings, names='Category', title='Finding Categories', hole=0.3), use_container_width=True)
+    if pi_findings.empty:
+        st.warning(f"No findings recorded for {selected_pi}.")
+    else:
+        st.plotly_chart(px.pie(pi_findings, names='Category', title='Finding Categories', hole=0.3), use_container_width=True)
 
 with tab4:
     st.header("V. Organizational Capability & Strategic Oversight")
     st.markdown("_This section assesses the capacity of the QA team and tracks progress and financial health of key strategic objectives._")
     st.subheader("A. Auditor Workload & Performance Analysis")
     with st.expander("View Methodological Summary"):
-        st.markdown("- **Purpose:** To manage human capital risk by visualizing workload vs. efficiency.\n- **Method:** A scatter plot of Audits Conducted vs. Report Turnaround Time. A composite 'Strain Index' provides a single metric for an auditor's operational load.\n- **Interpretation:** The plot identifies archetypes for targeted management: 'High Strain' auditors may need support, while 'Efficient' auditors are potential mentors.")
+        st.markdown("- **Purpose:** To manage human capital risk by visualizing workload vs. efficiency.\n- **Method:** A scatter plot of Audits Conducted vs. Report Turnaround Time with a composite 'Strain Index'.\n- **Interpretation:** Identifies archetypes for targeted management (e.g., high-strain vs. high-efficiency).")
     fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>QA Team Resource & Strain Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd)
     fig.update_traces(textposition='top center'); fig.add_hline(y=team_df['Avg_Report_Turnaround_Days'].mean(), line_dash="dot"); fig.add_vline(x=team_df['Audits_Conducted_YTD'].mean(), line_dash="dot")
     st.plotly_chart(fig, use_container_width=True)
@@ -296,14 +297,17 @@ with tab4:
     initiatives_df['Projected_Over_Under'] = initiatives_df['Budget_USD'] - initiatives_df['Projected_Total_Cost']
     initiatives_df['CPI'] = initiatives_df.apply(lambda row: (row['Budget_USD'] * row['Percent_Complete']/100) / row['Spent_USD'] if row['Spent_USD'] > 0 else 0, axis=1)
     initiatives_df['SPI'] = initiatives_df.apply(lambda row: (row['Percent_Complete']/100) / (row['Days_Elapsed']/row['Total_Days_Planned']) if row['Days_Elapsed'] > 0 and row['Total_Days_Planned'] > 0 else 0, axis=1)
-
     def format_financials(df):
         return df.style.format({'Budget_USD': "${:,.0f}", 'Spent_USD': "${:,.0f}", 'Projected_Total_Cost': "${:,.0f}", 'Projected_Over_Under': "${:,.0f}", 'Daily_Burn_Rate': "${:,.2f}", 'CPI': "{:.2f}", 'SPI': "{:.2f}"}).background_gradient(cmap='RdYlGn', subset=['Projected_Over_Under']).background_gradient(cmap='RdYlGn', vmin=0.8, vmax=1.2, subset=['CPI', 'SPI']).bar(subset=['Percent_Complete'], color='#5cadff', vmin=0, vmax=100)
     st.dataframe(format_financials(initiatives_df[['Initiative', 'Lead', 'Status', 'Percent_Complete', 'Budget_USD', 'Spent_USD', 'Projected_Total_Cost', 'Projected_Over_Under', 'CPI', 'SPI']]), use_container_width=True)
     st.caption("CPI (Cost Performance Index): > 1.0 is favorable. SPI (Schedule Performance Index): > 1.0 is favorable.")
 
-# ============================ SIDEBAR & REPORTING ============================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/e/e0/UC_San_Diego_Health_logo.svg/1200px-UC_San_Diego_Health_logo.svg.png", use_container_width=True)
+# ======================================================================================
+# SECTION 5: SIDEBAR & AUTOMATED EXECUTIVE REPORTING
+# ======================================================================================
+st.sidebar.markdown("## Moores Cancer Center")
+st.sidebar.markdown("### Clinical Trials Office")
+st.sidebar.markdown("---")
 st.sidebar.markdown("### About this Dashboard")
 st.sidebar.info("This **Scientific QA Command Center** leverages advanced analytics to empower the Assistant Director of QA. It is designed to facilitate proactive risk management, data-driven resource allocation, and a state of continuous inspection readiness.")
 st.sidebar.markdown("---")
@@ -317,5 +321,5 @@ with st.sidebar, st.spinner("Generating PowerPoint report..."):
     st.download_button(label="📥 Download PowerPoint Report", data=ppt_buffer, file_name=f"MCC_CTO_QA_Summary_{datetime.date.today()}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Key Concepts & Acronyms")
-st.sidebar.markdown("- **RBQM:** Risk-Based Quality Management\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice (ICH E6)\n- **CFR:** Code of Federal Regulations\n- **DSMC:** Data & Safety Monitoring Committee\n- **IIT:** Investigator-Initiated Trial\n- **CAPA:** Corrective and Preventive Action")
+st.sidebar.markdown("### Key Concepts & Regulations")
+st.sidebar.markdown("- **RBQM:** Risk-Based Quality Management (ICH E6)\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice (ICH E6)\n- **21 CFR Part 50:** Protection of Human Subjects (Informed Consent)\n- **21 CFR Part 312:** Investigational New Drug Application\n- **CAPA:** Corrective and Preventive Action")
