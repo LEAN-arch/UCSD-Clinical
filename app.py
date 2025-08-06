@@ -8,7 +8,8 @@ import io
 import time
 import logging
 
-from prophet import Prophet
+# Removed Prophet to significantly speed up startup and remove heavy dependency
+# from prophet import Prophet
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from sklearn.linear_model import LogisticRegression
@@ -76,14 +77,6 @@ def get_trial_risk_model(_portfolio_df):
     model.fit(X_final, y)
     return model, encoder, X_final.columns
 
-@st.cache_data(ttl=3600)
-def generate_prophet_forecast(_findings_df):
-    df_prophet = _findings_df[['Finding_Date']].copy(); df_prophet['y'] = 1; df_prophet = df_prophet.rename(columns={'Finding_Date': 'ds'})
-    monthly_df = df_prophet.set_index('ds').resample('ME').count().reset_index()
-    model = Prophet(yearly_seasonality=True, daily_seasonality=False); model.fit(monthly_df)
-    future = model.make_future_dataframe(periods=12, freq='ME'); forecast = model.predict(future)
-    return forecast, monthly_df
-
 def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
     prs = Presentation(); prs.slide_width = Inches(16); prs.slide_height = Inches(9)
     title_slide_layout = prs.slide_layouts[0]; slide = prs.slides.add_slide(title_slide_layout); slide.shapes.title.text = "MCC CTO Quality Assurance Executive Summary"; slide.placeholders[1].text = f"Report Generated: {datetime.date.today().strftime('%Y-%m-%d')}"
@@ -103,18 +96,6 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
         for col_idx, cell_data in enumerate(df_row): table.cell(ppt_row_idx, col_idx).text = str(cell_data)
     ppt_stream = io.BytesIO(); prs.save(ppt_stream); ppt_stream.seek(0)
     return ppt_stream
-
-def plot_prophet_forecast_sme(forecast, monthly_df):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=monthly_df['ds'], y=monthly_df['y'], mode='markers', name='Actual Findings', marker=dict(color='#005A9C', size=8), hovertemplate="<b>%{x|%B %Y}</b><br>Actual Findings: %{y}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(color='#3EC1D3', dash='dash'), hovertemplate="<b>%{x|%B %Y}</b><br>Forecasted: %{y:.1f}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill=None, mode='lines', line_color='rgba(62,193,211,0.2)', showlegend=False))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
-    last_actual_date = monthly_df['ds'].iloc[-1]
-    fig.add_vline(x=last_actual_date, line_width=1, line_dash="dot", line_color="grey", annotation_text="Last Actual", annotation_position="top left")
-    fig.update_layout(title='<b>12-Month Forecast of Audit Findings with Trend Analysis</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    return fig
 
 def plot_spc_chart_sme(df, date_col, category_col, value, title):
     df_filtered = df[df[category_col] == value].copy()
@@ -197,18 +178,13 @@ def render_command_center(portfolio_df, findings_df, team_df):
         fig.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig, use_container_width=True)
 
-def render_predictive_analytics(findings_df, portfolio_df):
-    st.subheader("Predictive Analytics & Forecasting", divider="blue")
-    st.markdown("_This section utilizes predictive modeling to forecast future states and quantify inherent risk, enabling a proactive, data-driven approach to quality management._")
+def render_predictive_analytics(portfolio_df):
+    st.subheader("Predictive Analytics", divider="blue")
+    st.markdown("_This section utilizes predictive modeling to quantify inherent trial risk, enabling a proactive, data-driven approach to quality management._")
 
-    # OPTIMIZATION: Heavy computations are now called here, inside the page function.
-    forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
+    # LAZY LOADING: The ML model is trained only when this page is visited for the first time.
     risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
 
-    with st.container(border=True):
-        st.markdown("##### Time-Series Forecast of Audit Finding Volume")
-        st.info("💡 **Expert Tip:** Is the overall yellow trend line increasing, decreasing, or flat? An increasing trend suggests systemic issues may be worsening, requiring strategic intervention beyond addressing individual findings.", icon="❓")
-        st.plotly_chart(plot_prophet_forecast_sme(forecast_data, actual_monthly_data), use_container_width=True)
     with st.container(border=True):
         st.markdown("##### Inherent Risk Prediction for New Trials")
         st.info("💡 **Expert Tip:** Use this tool to triage new protocols. A predicted risk score > 60% may warrant assigning a more senior auditor or increasing the monitoring frequency from the start.", icon="❓")
@@ -341,12 +317,7 @@ def main():
         # --- Executive Report Generator ---
         st.header("Generate Executive Report")
         st.info("Download a PowerPoint summary of the current QA program status for leadership review.")
-
-        # This data generation is lightweight and necessary for the report button to render.
-        # The main data is generated below, just once.
         portfolio_df, findings_df, team_df, _ = generate_master_data()
-        findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
-        findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
         risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
         open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
         open_findings['Risk_Score'] = open_findings['Risk_Level'].map(risk_weights)
@@ -358,7 +329,6 @@ def main():
         kpi_data_for_report = [("Portfolio Risk Score", total_risk_score, f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals"), ("Inspection Readiness", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs"), ("Resource Strain Index", f"{avg_strain:.2f}", "Target < 4.0")]
         findings_for_report = findings_df[(findings_df['Risk_Level'].isin(['Major', 'Critical'])) & (findings_df['CAPA_Status'] != 'Closed-Effective')][['Trial_ID', 'Category', 'Risk_Level', 'CAPA_Status']].head(10)
         default_spc_fig = plot_spc_chart_sme(findings_df, 'Finding_Date', 'Category', 'Informed Consent Process', "SPC Chart: Informed Consent Findings")
-
         ppt_buffer = generate_ppt_report(kpi_data_for_report, default_spc_fig, findings_for_report)
         st.download_button(label="📥 Download PowerPoint Report", data=ppt_buffer, file_name=f"MCC_CTO_QA_Summary_{datetime.date.today()}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
@@ -371,8 +341,6 @@ def main():
     st.markdown("An advanced analytics dashboard for the Assistant Director of Quality Assurance.")
 
     # --- Data Loading (Fast part only) ---
-    # OPTIMIZATION: Only the fast data generation runs on every page load.
-    # Heavy models are loaded lazily inside their respective page functions.
     portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
     findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
     findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
@@ -381,7 +349,7 @@ def main():
     if selected == "Home":
         render_command_center(portfolio_df, findings_df, team_df)
     elif selected == "Predictive Analytics":
-        render_predictive_analytics(findings_df, portfolio_df)
+        render_predictive_analytics(portfolio_df)
     elif selected == "Systemic Risk":
         render_systemic_risk(findings_df, portfolio_df)
     elif selected == "PI Performance":
