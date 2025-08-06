@@ -1,8 +1,9 @@
 streamlit
 pandas
-numpy<2.0
+numpy
 plotly
-scikit-learn
 prophet
 python-pptx
-kaleido
+scikit-learn
+kaleido>=1.0.0
+streamlit-option-menu
