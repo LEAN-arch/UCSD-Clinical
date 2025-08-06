@@ -135,12 +135,27 @@ def plot_prophet_forecast_sme(forecast, monthly_df):
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
     
-    # ========= THE FIX IS HERE =========
-    # Convert the pandas Timestamp to a Python datetime object before passing to Plotly
-    last_actual_date = monthly_df['ds'].iloc[-1].to_pydatetime()
+    # ========= THE DEFINITIVE FIX IS HERE =========
+    # Instead of using fig.add_vline, we create the line and annotation separately
+    # to bypass the buggy internal logic in Plotly.
+    last_actual_date = monthly_df['ds'].iloc[-1]
+    
+    # 1. Add the line as a shape
+    fig.add_shape(type="line",
+        x0=last_actual_date, y0=0, x1=last_actual_date, y1=1,
+        yref='paper', # Stretches the line from bottom to top
+        line=dict(color="grey", width=1, dash="dot")
+    )
+
+    # 2. Add the annotation for the line
+    fig.add_annotation(
+        x=last_actual_date, y=1.05, yref='paper',
+        text="Last Actual",
+        showarrow=False,
+        xanchor='left',
+    )
     # ========= END OF FIX =========
     
-    fig.add_vline(x=last_actual_date, line_width=1, line_dash="dot", line_color="grey", annotation_text="Last Actual", annotation_position="top left")
     fig.update_layout(title='<b>12-Month Forecast of Audit Findings with Trend Analysis</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
