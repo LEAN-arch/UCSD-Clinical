@@ -253,7 +253,8 @@ def render_command_center(portfolio_df, findings_df, team_df):
             st.error(f"**Overdue CAPA:** Finding `{finding['Finding_ID']}` on trial `{finding['Trial_ID']}` ({finding['Risk_Level']}) is overdue.", icon="🔥")
         most_strained = team_df.sort_values(by='Strain', ascending=False).iloc[0]
         if most_strained['Strain'] > 3.0:
-             st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon=" overworked")
+             # BUG FIX #1: Replaced shortcode with a literal emoji
+             st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon="⚠️")
         criticals_per_trial = findings_df[findings_df['Risk_Level'] == 'Critical'].groupby('Trial_ID').size().sort_values(ascending=False)
         if not criticals_per_trial.empty:
             trial_id, count = criticals_per_trial.index[0], criticals_per_trial.iloc[0]
@@ -464,7 +465,8 @@ def main():
     if selected == "Home":
         render_command_center(portfolio_df, findings_df, team_df)
     elif selected == "Predictive Analytics":
-        render_predictive_analytics(portfolio_df)
+        # BUG FIX #2: Pass both required DataFrames to the function
+        render_predictive_analytics(findings_df, portfolio_df)
     elif selected == "Systemic Risk":
         render_systemic_risk(findings_df, portfolio_df)
     elif selected == "PI Performance":
