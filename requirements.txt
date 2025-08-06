@@ -6,3 +6,4 @@ scikit-learn==1.5.1
 streamlit-option-menu==0.3.13 
 python-pptx==1.0.2 
 kaleido==0.2.1
+matplotlib
