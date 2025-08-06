@@ -16,7 +16,7 @@ from sklearn.preprocessing import OneHotEncoder
 from streamlit_option_menu import option_menu
 
 # ======================================================================================
-# SECTION 1: APP CONFIGURATION & ENHANCED STYLING
+# SECTION 1: APP CONFIGURATION & STYLING
 # ======================================================================================
 st.set_page_config(
     page_title="MCC CTO QA Command Center",
@@ -27,17 +27,8 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .main .block-container {
-        padding: 1rem 2rem 2rem;
-        max-width: 1400px;
-    }
-    .stMetric {
-        background-color: #FAFAFA;
-        border: 1px solid #E0E0E0;
-        border-left: 5px solid #005A9C;
-        border-radius: 8px;
-        padding: 15px;
-    }
+    .main .block-container { padding: 1rem 2rem 2rem; max-width: 1400px; }
+    .stMetric { background-color: #FAFAFA; border: 1px solid #E0E0E0; border-left: 5px solid #005A9C; border-radius: 8px; padding: 15px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -206,9 +197,14 @@ def render_command_center(portfolio_df, findings_df, team_df):
         fig.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig, use_container_width=True)
 
-def render_predictive_analytics(forecast_data, actual_monthly_data, portfolio_df, risk_model, encoder, model_features):
+def render_predictive_analytics(findings_df, portfolio_df):
     st.subheader("Predictive Analytics & Forecasting", divider="blue")
     st.markdown("_This section utilizes predictive modeling to forecast future states and quantify inherent risk, enabling a proactive, data-driven approach to quality management._")
+
+    # OPTIMIZATION: Heavy computations are now called here, inside the page function.
+    forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
+    risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
+
     with st.container(border=True):
         st.markdown("##### Time-Series Forecast of Audit Finding Volume")
         st.info("💡 **Expert Tip:** Is the overall yellow trend line increasing, decreasing, or flat? An increasing trend suggests systemic issues may be worsening, requiring strategic intervention beyond addressing individual findings.", icon="❓")
@@ -328,13 +324,6 @@ def render_organizational_capability(team_df, initiatives_df):
 # SECTION 5: MAIN APP ORCHESTRATION
 # ======================================================================================
 def main():
-    # --- Data Loading ---
-    portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
-    risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
-    forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
-    findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
-    findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
-
     # --- Sidebar Navigation & Controls ---
     with st.sidebar:
         st.markdown("## Moores Cancer Center")
@@ -349,9 +338,15 @@ def main():
         st.markdown("---")
         st.info("This dashboard demonstrates a proactive, data-driven approach to Clinical QA management.")
 
-        # RESTORED: Executive Report Generator
+        # --- Executive Report Generator ---
         st.header("Generate Executive Report")
-        st.info("Click to download a PowerPoint summary of the current QA program status for leadership review.")
+        st.info("Download a PowerPoint summary of the current QA program status for leadership review.")
+
+        # This data generation is lightweight and necessary for the report button to render.
+        # The main data is generated below, just once.
+        portfolio_df, findings_df, team_df, _ = generate_master_data()
+        findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
+        findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
         risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
         open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
         open_findings['Risk_Score'] = open_findings['Risk_Level'].map(risk_weights)
@@ -364,25 +359,29 @@ def main():
         findings_for_report = findings_df[(findings_df['Risk_Level'].isin(['Major', 'Critical'])) & (findings_df['CAPA_Status'] != 'Closed-Effective')][['Trial_ID', 'Category', 'Risk_Level', 'CAPA_Status']].head(10)
         default_spc_fig = plot_spc_chart_sme(findings_df, 'Finding_Date', 'Category', 'Informed Consent Process', "SPC Chart: Informed Consent Findings")
 
-        with st.spinner("Generating PowerPoint report..."):
-            ppt_buffer = generate_ppt_report(kpi_data_for_report, default_spc_fig, findings_for_report)
-            st.download_button(label="📥 Download PowerPoint Report", data=ppt_buffer, file_name=f"MCC_CTO_QA_Summary_{datetime.date.today()}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        ppt_buffer = generate_ppt_report(kpi_data_for_report, default_spc_fig, findings_for_report)
+        st.download_button(label="📥 Download PowerPoint Report", data=ppt_buffer, file_name=f"MCC_CTO_QA_Summary_{datetime.date.today()}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
-        # RESTORED: Key Concepts & Regulations Glossary
         st.markdown("---")
         st.markdown("### Key Concepts & Regulations")
-        st.markdown("- **RBQM:** Risk-Based Quality Management (ICH E6)\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice (ICH E6)\n- **21 CFR Part 50:** Protection of Human Subjects (Informed Consent)\n- **21 CFR Part 312:** Investigational New Drug Application\n- **CAPA:** Corrective and Preventive Action")
+        st.markdown("- **RBQM:** Risk-Based Quality Management (ICH E6)\n- **SPC:** Statistical Process Control\n- **CPI/SPI:** Cost/Schedule Performance Index\n- **GCP:** Good Clinical Practice (ICH E6)\n- **21 CFR Part 50:** Protection of Human Subjects\n- **21 CFR Part 312:** Investigational New Drug\n- **CAPA:** Corrective and Preventive Action")
 
     # --- Main Content Area ---
-    # RESTORED: Main Title
     st.title("🔬 Scientific QA Command Center")
     st.markdown("An advanced analytics dashboard for the Assistant Director of Quality Assurance.")
+
+    # --- Data Loading (Fast part only) ---
+    # OPTIMIZATION: Only the fast data generation runs on every page load.
+    # Heavy models are loaded lazily inside their respective page functions.
+    portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
+    findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
+    findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
 
     # --- Page Routing ---
     if selected == "Home":
         render_command_center(portfolio_df, findings_df, team_df)
     elif selected == "Predictive Analytics":
-        render_predictive_analytics(forecast_data, actual_monthly_data, portfolio_df, risk_model, encoder, model_features)
+        render_predictive_analytics(findings_df, portfolio_df)
     elif selected == "Systemic Risk":
         render_systemic_risk(findings_df, portfolio_df)
     elif selected == "PI Performance":
