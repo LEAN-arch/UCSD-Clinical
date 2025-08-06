@@ -129,11 +129,12 @@ def get_trial_risk_model(_portfolio_df):
 
 def plot_spc_chart_sme(df, date_col, category_col, value, title):
     df_filtered = df[df[category_col] == value].copy()
+    if df_filtered.empty:
+        return go.Figure().update_layout(title=f'<b>{title}</b><br>No data available.')
     df_filtered = df_filtered.set_index(date_col).sort_index()
     # Zero-fill missing months
     date_range = pd.date_range(start=df_filtered.index.min(), end=df_filtered.index.max(), freq='ME')
     monthly_counts = df_filtered.resample('ME').size().reindex(date_range, fill_value=0).reset_index(name='findings')
-    # Use 'index' as the date column name after reindex
     monthly_counts['month'] = monthly_counts['index'].dt.to_period('M').astype(str)
     if monthly_counts.empty or monthly_counts['findings'].sum() == 0:
         return go.Figure().update_layout(title=f'<b>{title}</b><br>No data available.')
