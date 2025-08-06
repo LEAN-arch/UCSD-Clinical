@@ -48,7 +48,7 @@ logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 # ======================================================================================
 # SECTION 2: DATA SIMULATION
 # ======================================================================================
-@st.cache_data(ttl=3600, persist=True)  # Increased TTL to 1 hour and persist for static data
+@st.cache_data(ttl=3600, persist=True)
 def generate_master_data():
     np.random.seed(42)
     num_trials = 60
@@ -69,11 +69,10 @@ def generate_master_data():
     pis_by_team = {team: [f'Dr. {team_initials}{i}' for i in range(1, 5)] for team, team_initials in zip(portfolio_df['Disease_Team'].unique(), ['L', 'U', 'B', 'GI', 'GU', 'M'])}
     portfolio_df['PI_Name'] = portfolio_df.apply(lambda row: np.random.choice(pis_by_team[row['Disease_Team']]), axis=1)
     
-    # Ensure every trial has at least 4 findings for consistency
     findings_trial_ids = trial_ids * 4 + np.random.choice(trial_ids, 250 - len(trial_ids) * 4).tolist()
     np.random.shuffle(findings_trial_ids)
     finding_categories = ['Informed Consent Process', 'Source Data Verification', 'Investigational Product Accountability', 'Regulatory Binder Mgmt', 'AE/SAE Reporting', 'Protocol Adherence']
-    max_days = (datetime.date(2025, 8, 6) - datetime.date(2022, 1, 1)).days  # Cap dates before 2025-08-06
+    max_days = (datetime.date(2025, 8, 6) - datetime.date(2022, 1, 1)).days
     findings_data = {
         'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)],
         'Trial_ID': findings_trial_ids[:250],
@@ -113,7 +112,7 @@ def generate_master_data():
 # ======================================================================================
 @st.cache_resource
 def get_trial_risk_model(_portfolio_df):
-    features = ['Trial_Type', 'Phase', 'PI_Experience_Level', 'Is_First_In_Human', 'Num_Sites', 'Subjects_Enrolled']  # Added Subjects_Enrolled
+    features = ['Trial_Type', 'Phase', 'PI_Experience_Level', 'Is_First_In_Human', 'Num_Sites', 'Subjects_Enrolled']
     target = 'Had_Major_Finding'
     X, y = _portfolio_df[features], _portfolio_df[target]
     categorical_features = ['Trial_Type', 'Phase', 'PI_Experience_Level']
@@ -122,7 +121,6 @@ def get_trial_risk_model(_portfolio_df):
     X_final = pd.concat([X.drop(columns=categorical_features).reset_index(drop=True), X_encoded], axis=1)
     model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=42)
     model.fit(X_final, y)
-    # Add model evaluation
     scores = cross_val_score(model, X_final, y, cv=5, scoring='f1')
     st.write(f"Model F1 Score (5-fold CV): {scores.mean():.2f} ± {scores.std():.2f}")
     return model, encoder, X_final.columns
@@ -186,7 +184,7 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
         slide.shapes.title.text = "Systemic Process Control (SPC) Analysis"
         try:
             image_stream = io.BytesIO()
-            spc_fig.write_image(image_stream, format='png', scale=1)  # Reduced scale for consistency
+            spc_fig.write_image(image_stream, format='png', scale=1)
             image_stream.seek(0)
             slide.shapes.add_picture(image_stream, Inches(1), Inches(1.5), width=Inches(14))
         except (RuntimeError, ValueError) as e:
@@ -205,7 +203,7 @@ def generate_ppt_report(kpi_data, spc_fig, findings_table_df):
         slide = prs.slides.add_slide(table_slide_layout)
         slide.shapes.title.text = "High-Priority Open Findings (Critical/Major)"
         rows, cols = findings_table_df.shape[0] + 1, findings_table_df.shape[1]
-        table_height = min(Inches(6), Inches(0.4) * rows)  # Dynamic table height
+        table_height = min(Inches(6), Inches(0.4) * rows)
         table = slide.shapes.add_table(rows, cols, Inches(1), Inches(1.5), Inches(14), table_height).table
         for col_idx, col_name in enumerate(findings_table_df.columns):
             table.cell(0, col_idx).text = col_name
@@ -231,7 +229,6 @@ def plot_pi_findings_barchart_sme(pi_findings, pi_name):
     return fig
 
 def plot_auditor_strain_sme(team_df):
-    # Refined strain calculation
     team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days'] / (team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill'])).round(2)
     fig = px.scatter(team_df, x='Audits_Conducted_YTD', y='Avg_Report_Turnaround_Days', size='Strain', color='Strain', text='Auditor', title='<b>Auditor Performance & Workload Quadrant Analysis</b>', labels={'Audits_Conducted_YTD': 'Audits Conducted (Workload)', 'Avg_Report_Turnaround_Days': 'Avg. Report Turnaround Time (Efficiency)'}, color_continuous_scale=px.colors.sequential.OrRd, hovertemplate="<b>%{text}</b><br>Audits: %{x}<br>Avg. Turnaround: %{y:.1f} days<br>Strain Index: %{marker.size:.1f}<extra></extra>")
     mean_x, mean_y = team_df['Audits_Conducted_YTD'].mean(), team_df['Avg_Report_Turnaround_Days'].mean()
@@ -310,7 +307,7 @@ def render_predictive_analytics(portfolio_df):
                         'PI_Experience_Level': [p_pi_exp],
                         'Is_First_In_Human': [False],
                         'Num_Sites': [1],
-                        'Subjects_Enrolled': [50]  # Default value for new feature
+                        'Subjects_Enrolled': [50]
                     })
                     input_encoded = pd.DataFrame(encoder.transform(input_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]), columns=encoder.get_feature_names_out(['Trial_Type', 'Phase', 'PI_Experience_Level']))
                     input_final = pd.concat([input_df.drop(columns=['Trial_Type', 'Phase', 'PI_Experience_Level']).reset_index(drop=True), input_encoded], axis=1).reindex(columns=model_features, fill_value=0)
@@ -434,7 +431,7 @@ def render_organizational_capability(team_df, initiatives_df):
 def main():
     portfolio_df, findings_df, team_df, initiatives_df = generate_master_data()
     findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
-    findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days.fillna(0)  # Handle NaT gracefully
+    findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days.fillna(0)
 
     with st.sidebar:
         st.markdown("## Moores Cancer Center")
