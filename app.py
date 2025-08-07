@@ -352,7 +352,8 @@ def render_command_center(portfolio_df, findings_df, team_df):
 
     # CORRECTED: KPI 4: Avg Open CAPA Age
     open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
-    open_findings['Age'] = (datetime.datetime.now(datetime.timezone.utc) - open_findings['Finding_Date']).dt.days
+    # FIX: Use a timezone-naive 'now' to match the naive dates in the dataframe
+    open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
     avg_capa_age = open_findings['Age'].mean()
     with kpi_col4:
         st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
@@ -652,10 +653,13 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             fig = px.bar(compliance_df, x='Status', y='Count', text='Count', color='Status', title="<b>Team GCP Certification Compliance Status</b>", color_discrete_map={'Current': 'green', 'Expires <90d': 'orange', 'Expired': 'red'})
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
-    with main_tabs[1]:
+with main_tabs[1]:
         st.markdown("##### Strategic Initiatives & Financial Oversight")
         st.info("💡 **Expert Tip:** A CPI or SPI value < 1.0 indicates a project is over budget or behind schedule, respectively. This allows for proactive intervention before projects go significantly off-track.", icon="❓")
-        today = pd.to_datetime(datetime.date.today())
+        # FIX: Ensure 'today' is timezone-naive to match the naive Start_Date
+        today = pd.to_datetime(datetime.datetime.now()) # Use datetime.now() instead of date.today()
+        initiatives_df['Start_Date'] = pd.to_datetime(initiatives_df['Start_Date'])
+        initiatives_df['End_Date'] = pd.to_datetime(initiatives_df['End_Date'])
         initiatives_df['Days_Elapsed'] = (today - initiatives_df['Start_Date']).dt.days
         initiatives_df['Total_Days_Planned'] = (initiatives_df['End_Date'] - initiatives_df['Start_Date']).dt.days
         initiatives_df['Daily_Burn_Rate'] = initiatives_df.apply(lambda row: row['Spent_USD'] / row['Days_Elapsed'] if row['Days_Elapsed'] > 0 else 0, axis=1)
