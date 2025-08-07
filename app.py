@@ -728,17 +728,18 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
 
         plot_tabs = st.tabs(["🎯 Skill & Performance Quadrant", "📈 Efficiency & Workload Trends", "🔍 Audit Yield Analysis", "✅ Compliance & Readiness"])
 
-        with plot_tabs[0]:
+with plot_tabs[0]:
             st.markdown("###### Skill & Performance Quadrant Analysis")
             st.info("💡 **Expert Tip:** This chart combines skill with performance. Use it to identify auditors who are both highly skilled and efficient (top-right quadrant) as potential mentors, or those who may need coaching (bottom-left).", icon="❓")
             
             skill_cols = [col for col in filtered_team_df.columns if '_Skill' in col]
             if not filtered_team_df.empty:
-                filtered_team_df['Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
+                # FIX: Use .loc for all new column assignments to prevent SettingWithCopyWarning
+                filtered_team_df.loc[:, 'Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
                 
                 if 'Strain' not in filtered_team_df.columns:
-                    filtered_team_df['Skill_Factor'] = filtered_team_df['IIT_Oversight_Skill'] + filtered_team_df['FDA_Inspection_Mgmt_Skill']
-                    filtered_team_df['Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
+                    filtered_team_df.loc[:, 'Skill_Factor'] = filtered_team_df['IIT_Oversight_Skill'] + filtered_team_df['FDA_Inspection_Mgmt_Skill']
+                    filtered_team_df.loc[:, 'Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
 
                 fig = px.scatter(
                     filtered_team_df,
@@ -770,7 +771,6 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("No auditor data available for the selected filter.")
-
 
         with plot_tabs[1]:
             st.markdown("###### Historical Workload vs. Efficiency Trends")
