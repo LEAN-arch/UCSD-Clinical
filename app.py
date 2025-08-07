@@ -277,8 +277,15 @@ def render_command_center(portfolio_df, findings_df, team_df):
     st.markdown("##### Program Health & Risk")
     kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
     risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
-    open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
+
+    # CORRECT ORDER:
+    # 1. Add the 'Risk_Score' column to the main DataFrame first.
     findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
+
+    # 2. THEN, create the subset. It will now correctly contain the 'Risk_Score' column.
+    open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
+
+    # 3. Now, all subsequent calculations will work correctly.
     total_risk_score = int(open_findings['Risk_Score'].sum())
     overdue_major_capas = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].shape[0]
     readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0] * 5))
