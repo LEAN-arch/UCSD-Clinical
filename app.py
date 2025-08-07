@@ -399,9 +399,9 @@ def render_command_center(portfolio_df, findings_df, team_df):
         
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # --- Plotting Tabs (No changes needed here) ---
+    # --- Plotting Tabs ---
     plot_tabs = st.tabs(["🔥 Priority Alerts", "📊 Finding Backlog", "🧑‍🔬 Auditor Skills", "🗺️ Risk Treemap"])
-    # ... (rest of the function remains the same) ...
+    
     with plot_tabs[0]:
         st.markdown("##### High-Priority Alerts & Portfolio Status")
         col1, col2 = st.columns([1, 2])
@@ -417,25 +417,26 @@ def render_command_center(portfolio_df, findings_df, team_df):
             fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
             st.plotly_chart(fig, use_container_width=True)
             
-with plot_tabs[1]:
+    # CORRECTED: This code is now INSIDE the function.
+    with plot_tabs[1]:
         st.markdown("##### Monthly Finding Velocity & Active Backlog Analysis")
         st.info("💡 **Expert Tip:** Compare the stacked 'Opened' bar to the solid 'Closed' bar each month. If 'Opened' is consistently taller, the backlog (blue line) will rise. Focus on months where the red (Critical) or orange (Major) segments are large.", icon="❓")
         
-        # 1. Prepare data for monthly velocity
         findings_df['Finding_Month'] = findings_df['Finding_Date'].dt.to_period('M')
         opened_by_risk = pd.crosstab(findings_df['Finding_Month'], findings_df['Risk_Level'])
         
-        # Ensure all risk columns exist
         for risk in ['Critical', 'Major', 'Minor']:
             if risk not in opened_by_risk.columns:
                 opened_by_risk[risk] = 0
-        opened_by_risk = opened_by_risk[['Critical', 'Major', 'Minor']] # Ensure order
+        opened_by_risk = opened_by_risk[['Critical', 'Major', 'Minor']]
 
         closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date'])
-        closed_by_month['Closure_Month'] = closed_by_month['CAPA_Closure_Date'].dt.to_period('M')
-        closed_counts = closed_by_month.groupby('Closure_Month').size().rename('Closed')
-        
-        # 2. Combine and calculate backlog
+        if not closed_by_month.empty:
+            closed_by_month['Closure_Month'] = closed_by_month['CAPA_Closure_Date'].dt.to_period('M')
+            closed_counts = closed_by_month.groupby('Closure_Month').size().rename('Closed')
+        else:
+            closed_counts = pd.Series(name='Closed', dtype='int64')
+
         velocity_df = pd.concat([opened_by_risk, closed_counts], axis=1).fillna(0)
         velocity_df['Total_Opened'] = velocity_df[['Critical', 'Major', 'Minor']].sum(axis=1)
         
@@ -443,24 +444,14 @@ with plot_tabs[1]:
         velocity_df['Cumulative_Closed'] = velocity_df['Closed'].cumsum()
         velocity_df['Active_Backlog'] = velocity_df['Cumulative_Opened'] - velocity_df['Cumulative_Closed']
         
-        velocity_df.index = velocity_df.index.to_timestamp() # Convert PeriodIndex to DatetimeIndex for plotting
+        velocity_df.index = velocity_df.index.to_timestamp()
 
-        # 3. Create the multi-layered plot
         fig = go.Figure()
-
-        # Add stacked bars for Opened findings by risk
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Critical'], name='Opened: Critical', marker_color='#E63946'))
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Major'], name='Opened: Major', marker_color='#FFC72C'))
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Minor'], name='Opened: Minor', marker_color='#A8DADC'))
-        
-        # Add a separate bar for Closed findings
-        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Closed'], name='Closed (All Risks)', marker_color='#457B9D',
-                             hovertemplate="<b>%{x|%B %Y}</b><br>Closed: %{y}<extra></extra>"))
-        
-        # Add the backlog trend line on a secondary axis
-        fig.add_trace(go.Scatter(x=velocity_df.index, y=velocity_df['Active_Backlog'], name='Active Backlog Size',
-                                 mode='lines+markers', line=dict(color='#005A9C', width=3), yaxis='y2',
-                                 hovertemplate="<b>%{x|%B %Y}</b><br>Backlog: %{y}<extra></extra>"))
+        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Closed'], name='Closed (All Risks)', marker_color='#457B9D', hovertemplate="<b>%{x|%B %Y}</b><br>Closed: %{y}<extra></extra>"))
+        fig.add_trace(go.Scatter(x=velocity_df.index, y=velocity_df['Active_Backlog'], name='Active Backlog Size', mode='lines+markers', line=dict(color='#005A9C', width=3), yaxis='y2', hovertemplate="<b>%{x|%B %Y}</b><br>Backlog: %{y}<extra></extra>"))
         
         fig.update_layout(
             barmode='stack',
@@ -472,28 +463,24 @@ with plot_tabs[1]:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-with plot_tabs[2]:
+    # CORRECTED: This code is now INSIDE the function.
+    with plot_tabs[2]:
         st.markdown("##### Interactive Auditor Skill & Performance Matrix")
         
-        # 1. Prepare the data with an overall skill score
         skill_cols = [col for col in team_df.columns if '_Skill' in col]
         team_df['Overall_Skill'] = team_df[skill_cols].mean(axis=1)
-        
-        # Create a user-friendly mapping for skill selection
         skill_options = {col.replace('_', ' ').replace(' Skill', ''): col for col in skill_cols}
         
-        # 2. Create the interactive controls
         col1, col2 = st.columns([1, 2])
         with col1:
             st.info("💡 **Expert Tip:** Select a skill from the dropdown to color-code the auditors. This helps you find the right expert and assess their current workload and efficiency simultaneously.", icon="❓")
             selected_skill_label = st.selectbox(
                 "Color-code auditors by skill:",
                 options=list(skill_options.keys()),
-                index=0 # Default to the first skill
+                index=0
             )
             selected_skill_col = skill_options[selected_skill_label]
 
-        # 3. Create the dynamic bubble chart
         with col2:
             fig = px.scatter(
                 team_df,
@@ -538,14 +525,14 @@ with plot_tabs[2]:
             fig.update_layout(plot_bgcolor='white', coloraxis_colorbar=dict(title=f'{selected_skill_label}<br>Level'))
             st.plotly_chart(fig, use_container_width=True)
                
-        with plot_tabs[3]:
-            st.markdown("##### Portfolio Risk Treemap")
-            st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
-            risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
-            risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
-            fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
-            fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-            st.plotly_chart(fig, use_container_width=True)
+    with plot_tabs[3]:
+        st.markdown("##### Portfolio Risk Treemap")
+        st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
+        risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
+        risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
+        fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
+        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_predictive_analytics(findings_df, portfolio_df):
     st.subheader("Predictive Analytics & Forecasting", divider="blue")
