@@ -293,7 +293,10 @@ def render_command_center(portfolio_df, findings_df, team_df):
     kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
     kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
 
-    open_findings['Age'] = (datetime.datetime.now().date() - open_findings['Finding_Date'].dt.date).dt.days
+# Convert 'Finding_Date' to datetime to be safe, then calculate the age in days.
+    open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
+    open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
+    
     avg_capa_age = open_findings['Age'].mean()
     kpi_col4.metric("Avg. Open CAPA Age (Days)", f"{avg_capa_age:.1f}", "Target < 30 Days", delta_color="inverse")
     with st.popover("ⓘ"): st.markdown("**Avg. Open CAPA Age:** The average number of days that all currently open corrective/preventive actions have been active. A rising number indicates a growing backlog or bottlenecks in the resolution process.")
