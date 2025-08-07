@@ -718,7 +718,7 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             default=['All Auditors']
         )
 
-if 'All Auditors' in selected_auditors or not selected_auditors:
+            if 'All Auditors' in selected_auditors or not selected_auditors:
             filtered_team_df = team_df.copy()
             filtered_audit_yield_df = audit_yield_df.copy()
             else:
