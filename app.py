@@ -754,21 +754,22 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
                     filtered_team_df['Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
 
                 fig = px.scatter(
-                    filtered_team_df,
-                    x='Avg_Skill_Score',
-                    y='Avg_Report_Turnaround_Days',
-                    size='Audits_Conducted_YTD',
-                    color='Strain',
-                    text='Auditor',
-                    title='<b>Auditor Skill vs. Efficiency Quadrant</b>',
-                    labels={
-                        'Avg_Skill_Score': 'Average Skill Score (All Categories)',
-                        'Avg_Report_Turnaround_Days': 'Efficiency (Lower is Better)',
-                        'Audits_Conducted_YTD': 'Workload (Audits YTD)',
-                        'Strain': 'Strain Index'
-                    },
-                    color_continuous_scale=px.colors.sequential.RdYlGn_r # Reversed: Red is high strain
-                )
+                                filtered_team_df,
+                                x='Avg_Skill_Score',
+                                y='Avg_Report_Turnaround_Days',
+                                size='Audits_Conducted_YTD',
+                                color='Strain',
+                                text='Auditor',
+                                title='<b>Auditor Skill vs. Efficiency Quadrant</b>',
+                                labels={
+                                    'Avg_Skill_Score': 'Average Skill Score (All Categories)',
+                                    'Avg_Report_Turnaround_Days': 'Efficiency (Lower is Better)',
+                                    'Audits_Conducted_YTD': 'Workload (Audits YTD)',
+                                    'Strain': 'Strain Index'
+                                },
+                                # FIX: Use a valid Plotly sequential color scale. OrRd is ideal for showing high strain as red.
+                                color_continuous_scale=px.colors.sequential.OrRd 
+                            )
                 
                 fig.update_yaxes(autorange="reversed")
                 
