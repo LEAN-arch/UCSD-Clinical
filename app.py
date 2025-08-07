@@ -417,28 +417,126 @@ def render_command_center(portfolio_df, findings_df, team_df):
             fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
             st.plotly_chart(fig, use_container_width=True)
             
-    with plot_tabs[1]:
-        st.markdown("##### Findings Funnel: Opened vs. Closed Over Time")
-        st.info("💡 **Expert Tip:** Watch the gap between the blue (Opened) and red (Closed) areas. If the gap is widening, your team's backlog is growing, and you may need to re-prioritize or allocate more resources to CAPA management.", icon="❓")
-        opened_by_month = findings_df.set_index('Finding_Date').resample('ME').size().reset_index(name='Opened')
-        closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date']).set_index('CAPA_Closure_Date').resample('ME').size().reset_index(name='Closed')
-        funnel_df = pd.merge(opened_by_month, closed_by_month, left_on='Finding_Date', right_on='CAPA_Closure_Date', how='outer')
-        funnel_df[['Opened', 'Closed']] = funnel_df[['Opened', 'Closed']].fillna(0)
-        funnel_df['Date'] = funnel_df['Finding_Date'].combine_first(funnel_df['CAPA_Closure_Date'])
-        funnel_df = funnel_df.sort_values('Date').reset_index(drop=True)
-        funnel_df['Cumulative_Opened'] = funnel_df['Opened'].cumsum()
-        funnel_df['Cumulative_Closed'] = funnel_df['Closed'].cumsum()
+with plot_tabs[1]:
+        st.markdown("##### Monthly Finding Velocity & Active Backlog Analysis")
+        st.info("💡 **Expert Tip:** Compare the stacked 'Opened' bar to the solid 'Closed' bar each month. If 'Opened' is consistently taller, the backlog (blue line) will rise. Focus on months where the red (Critical) or orange (Major) segments are large.", icon="❓")
+        
+        # 1. Prepare data for monthly velocity
+        findings_df['Finding_Month'] = findings_df['Finding_Date'].dt.to_period('M')
+        opened_by_risk = pd.crosstab(findings_df['Finding_Month'], findings_df['Risk_Level'])
+        
+        # Ensure all risk columns exist
+        for risk in ['Critical', 'Major', 'Minor']:
+            if risk not in opened_by_risk.columns:
+                opened_by_risk[risk] = 0
+        opened_by_risk = opened_by_risk[['Critical', 'Major', 'Minor']] # Ensure order
+
+        closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date'])
+        closed_by_month['Closure_Month'] = closed_by_month['CAPA_Closure_Date'].dt.to_period('M')
+        closed_counts = closed_by_month.groupby('Closure_Month').size().rename('Closed')
+        
+        # 2. Combine and calculate backlog
+        velocity_df = pd.concat([opened_by_risk, closed_counts], axis=1).fillna(0)
+        velocity_df['Total_Opened'] = velocity_df[['Critical', 'Major', 'Minor']].sum(axis=1)
+        
+        velocity_df['Cumulative_Opened'] = velocity_df['Total_Opened'].cumsum()
+        velocity_df['Cumulative_Closed'] = velocity_df['Closed'].cumsum()
+        velocity_df['Active_Backlog'] = velocity_df['Cumulative_Opened'] - velocity_df['Cumulative_Closed']
+        
+        velocity_df.index = velocity_df.index.to_timestamp() # Convert PeriodIndex to DatetimeIndex for plotting
+
+        # 3. Create the multi-layered plot
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Opened'], fill='tozeroy', mode='lines', name='Total Findings Opened', line_color='#005A9C'))
-        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Closed'], fill='tozeroy', mode='lines', name='Total Findings Closed', line_color='#E63946'))
-        fig.update_layout(title="<b>Cumulative Findings Funnel</b>", yaxis_title="Count of Findings")
+
+        # Add stacked bars for Opened findings by risk
+        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Critical'], name='Opened: Critical', marker_color='#E63946'))
+        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Major'], name='Opened: Major', marker_color='#FFC72C'))
+        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Minor'], name='Opened: Minor', marker_color='#A8DADC'))
+        
+        # Add a separate bar for Closed findings
+        fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Closed'], name='Closed (All Risks)', marker_color='#457B9D',
+                             hovertemplate="<b>%{x|%B %Y}</b><br>Closed: %{y}<extra></extra>"))
+        
+        # Add the backlog trend line on a secondary axis
+        fig.add_trace(go.Scatter(x=velocity_df.index, y=velocity_df['Active_Backlog'], name='Active Backlog Size',
+                                 mode='lines+markers', line=dict(color='#005A9C', width=3), yaxis='y2',
+                                 hovertemplate="<b>%{x|%B %Y}</b><br>Backlog: %{y}<extra></extra>"))
+        
+        fig.update_layout(
+            barmode='stack',
+            title_text='<b>Monthly Finding Velocity vs. Active Backlog Trend</b>',
+            yaxis=dict(title='Monthly Count'),
+            yaxis2=dict(title='Total Open Backlog', overlaying='y', side='right', showgrid=False),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            plot_bgcolor='white'
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-    with plot_tabs[2]:
-        st.markdown("##### Auditor Skill Matrix")
-        st.info("💡 **Expert Tip:** Use this matrix for strategic audit assignment. Assign auditors with high skill levels (darker blue) to the most complex and high-risk trials within a given disease area to maximize effectiveness.", icon="❓")
-        fig = px.imshow(team_df.set_index('Auditor')[['IIT_Oversight_Skill', 'FDA_Inspection_Mgmt_Skill']], text_auto=True, aspect="auto", title="<b>Auditor Skill Level Matrix (1-5 Scale)</b>", labels=dict(x="Specialized Skill", y="Auditor", color="Skill Level"), color_continuous_scale='Blues')
-        st.plotly_chart(fig, use_container_width=True)
+with plot_tabs[2]:
+        st.markdown("##### Interactive Auditor Skill & Performance Matrix")
+        
+        # 1. Prepare the data with an overall skill score
+        skill_cols = [col for col in team_df.columns if '_Skill' in col]
+        team_df['Overall_Skill'] = team_df[skill_cols].mean(axis=1)
+        
+        # Create a user-friendly mapping for skill selection
+        skill_options = {col.replace('_', ' ').replace(' Skill', ''): col for col in skill_cols}
+        
+        # 2. Create the interactive controls
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.info("💡 **Expert Tip:** Select a skill from the dropdown to color-code the auditors. This helps you find the right expert and assess their current workload and efficiency simultaneously.", icon="❓")
+            selected_skill_label = st.selectbox(
+                "Color-code auditors by skill:",
+                options=list(skill_options.keys()),
+                index=0 # Default to the first skill
+            )
+            selected_skill_col = skill_options[selected_skill_label]
+
+        # 3. Create the dynamic bubble chart
+        with col2:
+            fig = px.scatter(
+                team_df,
+                x='Audits_Conducted_YTD',
+                y='Avg_Report_Turnaround_Days',
+                size='Overall_Skill',
+                color=selected_skill_col,
+                text='Auditor',
+                title=f'<b>Auditor Performance (Colored by {selected_skill_label} Skill)</b>',
+                labels={
+                    'Audits_Conducted_YTD': 'Workload (Audits YTD)',
+                    'Avg_Report_Turnaround_Days': 'Efficiency (Avg. Report Turnaround)',
+                    selected_skill_col: f'{selected_skill_label} Level'
+                },
+                color_continuous_scale=px.colors.sequential.Blues,
+                size_max=40,
+                height=500
+            )
+
+            mean_x = team_df['Audits_Conducted_YTD'].mean()
+            mean_y = team_df['Avg_Report_Turnaround_Days'].mean()
+            
+            fig.add_hline(y=mean_y, line_dash="dot", line_color="grey")
+            fig.add_vline(x=mean_x, line_dash="dot", line_color="grey")
+
+            fig.add_annotation(x=mean_x*1.2, y=mean_y*1.2, text="<b>Needs Coaching</b><br>(High Workload, Low Efficiency)", showarrow=False, font=dict(color="goldenrod"))
+            fig.add_annotation(x=mean_x*1.2, y=mean_y*0.8, text="<b>Top Performers</b><br>(High Workload, High Efficiency)", showarrow=False, font=dict(color="darkgreen"))
+            fig.add_annotation(x=mean_x*0.8, y=mean_y*0.8, text="<b>Growth Potential</b><br>(Low Workload, High Efficiency)", showarrow=False, font=dict(color="darkblue"))
+            fig.add_annotation(x=mean_x*0.8, y=mean_y*1.2, text="<b>Efficiency Opportunity</b><br>(Low Workload, Low Efficiency)", showarrow=False, font=dict(color="firebrick"))
+
+            fig.update_traces(
+                textposition='top center',
+                hovertemplate=(
+                    "<b>%{text}</b><br><br>"
+                    "Workload (Audits): %{x}<br>"
+                    "Efficiency (Turnaround): %{y:.1f} days<br>"
+                    "Overall Skill Score: %{marker.size:.1f}<br>"
+                    f"{selected_skill_label} Skill: %{{customdata[0]}}<extra></extra>"
+                ),
+                customdata=team_df[[selected_skill_col]]
+            )
+            fig.update_layout(plot_bgcolor='white', coloraxis_colorbar=dict(title=f'{selected_skill_label}<br>Level'))
+            st.plotly_chart(fig, use_container_width=True)
                
     with plot_tabs[3]:
         st.markdown("##### Portfolio Risk Treemap")
