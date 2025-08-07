@@ -115,7 +115,7 @@ def generate_master_data():
     findings_df['Is_Proactive'] = np.random.choice([True, False], len(findings_df), p=[0.3, 0.7])
     # Simulate some additional portfolio metrics needed by KPIs
     portfolio_df['Total_SAEs'] = np.random.randint(0, 15, len(portfolio_df))
-    portfolio_df['Overdue_SAE_Reports'] = portfolio_df.apply(lambda r: np.random.randint(0, r['Total_SAEs']//2) if r['Total_SAEs'] > 0 else 0, axis=1)
+    portfolio_df['Overdue_SAE_Reports'] = portfolio_df.apply(lambda r: np.random.randint(0, (r['Total_SAEs']//2) + 1) if r['Total_SAEs'] > 0 else 0, axis=1)
 
     # ========= UPDATE THE RETURN STATEMENT TO INCLUDE THE NEW DATAFRAME ========
     return portfolio_df, findings_df, team_df, initiatives_df, audits_df
