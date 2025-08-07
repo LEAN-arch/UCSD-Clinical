@@ -26,12 +26,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# REVISED: Corrected and consolidated CSS for all KPI box styles.
 st.markdown("""
 <style>
     .main .block-container { padding: 1rem 2rem 2rem; max-width: 1400px; }
     
-    /* Base style for all metric displays, including those without explanations */
+    /* Base style for all metric displays */
     .stMetric { 
         background-color: #FAFAFA; 
         border: 1px solid #E0E0E0; 
@@ -40,33 +39,12 @@ st.markdown("""
         padding: 15px; 
     }
 
-    /* Custom container for KPIs that include explanation text */
-    .kpi-box {
-        background-color: #FAFAFA;
-        border: 1px solid #E0E0E0;
-        border-left: 5px solid #005A9C;
-        border-radius: 8px;
-        padding: 15px 15px 10px 15px;
-        margin-bottom: 10px;
-        height: 160px; /* Fixed height ensures alignment */
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    
-    /* Override st.metric default style ONLY when it's inside our custom kpi-box */
-    .kpi-box .stMetric {
-        background-color: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-    }
-    
-    /* Style for the explanation text inside the kpi-box */
-    .kpi-box .kpi-explanation {
+    /* Style for the explanation text that will appear BELOW the box */
+    .kpi-explanation {
         font-size: 13px;
         color: #555555;
-        margin: 0;
-        padding-top: 5px;
+        padding-top: 10px;
+        padding-left: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -186,21 +164,11 @@ def get_finding_category_model(_portfolio_df, _findings_df):
 @st.cache_data(ttl=3600)
 def generate_prophet_forecast(_findings_df):
     df_prophet = _findings_df[['Finding_Date']].copy()
-    # This column is not used in the final dataframe, so we can remove it for clarity
-    # df_prophet['y'] = 1 
     df_prophet = df_prophet.rename(columns={'Finding_Date': 'ds'})
-    
-    # Create the monthly dataframe
     monthly_df = df_prophet.set_index('ds').resample('ME').size().reset_index()
-    
-    # FIX: Rename the default count column (named 0) to 'y' as required by Prophet
     monthly_df = monthly_df.rename(columns={0: 'y'})
-    
-    # Check for empty dataframe after resampling to prevent Prophet errors
     if monthly_df.empty:
-        # Return empty forecast and the (also empty) monthly_df
         return pd.DataFrame(), monthly_df
-
     model = Prophet(yearly_seasonality=True, daily_seasonality=False)
     model.fit(monthly_df)
     future = model.make_future_dataframe(periods=12, freq='ME')
@@ -223,11 +191,13 @@ def analyze_capa_effectiveness(findings_df):
 
 def plot_prophet_forecast_sme(forecast, monthly_df):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=monthly_df['ds'], y=monthly_df.iloc[:, 1], mode='markers', name='Actual Findings', marker=dict(color='#005A9C', size=8), hovertemplate="<b>%{x|%B %Y}</b><br>Actual Findings: %{y}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(color='#3EC1D3', dash='dash'), hovertemplate="<b>%{x|%B %Y}</b><br>Forecasted: %{y:.1f}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill=None, mode='lines', line_color='rgba(62,193,211,0.2)', showlegend=False))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
+    if not monthly_df.empty:
+        fig.add_trace(go.Scatter(x=monthly_df['ds'], y=monthly_df.iloc[:, 1], mode='markers', name='Actual Findings', marker=dict(color='#005A9C', size=8), hovertemplate="<b>%{x|%B %Y}</b><br>Actual Findings: %{y}<extra></extra>"))
+    if not forecast.empty:
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(color='#3EC1D3', dash='dash'), hovertemplate="<b>%{x|%B %Y}</b><br>Forecasted: %{y:.1f}<extra></extra>"))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill=None, mode='lines', line_color='rgba(62,193,211,0.2)', showlegend=False))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
     
     if not monthly_df.empty:
         last_actual_date = monthly_df['ds'].iloc[-1]
@@ -237,7 +207,6 @@ def plot_prophet_forecast_sme(forecast, monthly_df):
             text="Last Actual", showarrow=False,
             xanchor="left", yanchor="bottom", xshift=5
         )
-
     fig.update_layout(title='<b>12-Month Forecast of Audit Findings with Trend Analysis</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
@@ -332,7 +301,6 @@ def plot_auditor_strain_sme(team_df):
 # ======================================================================================
 # SECTION 4: UI PAGE RENDERING FUNCTIONS
 # ======================================================================================
-# REVISED: This function is completely rewritten to be clean and correct.
 def render_command_center(portfolio_df, findings_df, team_df):
     st.subheader("Executive Command Center", divider="blue")
     st.markdown("A strategic overview of the QA program's current status, efficiency, and highest priority items.")
@@ -357,57 +325,51 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>A 0-100% score based on overdue and critical findings. Represents preparedness for a regulatory inspection.</p>", unsafe_allow_html=True)
 
     with kpi_col3:
-        team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
-        team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
+        if 'Strain' not in team_df.columns:
+            team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
+            team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
         avg_strain = team_df['Strain'].mean()
         st.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", "Target < 2.5", "normal")
         st.markdown("<p class='kpi-explanation'>A metric combining auditor workload and efficiency. A higher value may indicate a risk of burnout or bottlenecks.</p>", unsafe_allow_html=True)
 
     # --- Program Velocity & Maturity ---
     st.markdown("##### Program Velocity & Maturity")
-    kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
-    kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
+    kpi_col4, kpi_col5, kpi_col6, kpi_col7, kpi_col8, kpi_col9 = st.columns(6)
 
     with kpi_col4:
         open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
         open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
         avg_capa_age = open_findings['Age'].mean()
-        st.metric("Avg. Open CAPA Age (Days)", f"{avg_capa_age:.1f}", "Target < 30 Days", "inverse")
-        st.markdown("<p class='kpi-explanation'>The average number of days that all currently open corrective/preventive actions have been active. A rising number indicates a growing backlog.</p>", unsafe_allow_html=True)
+        st.metric("Avg. Open CAPA Age", f"{avg_capa_age:.1f} days", "Target < 30", "inverse")
 
     with kpi_col5:
         total_saes = portfolio_df['Total_SAEs'].sum()
         overdue_saes = portfolio_df['Overdue_SAE_Reports'].sum()
         overdue_sae_rate = (overdue_saes / total_saes) * 100 if total_saes > 0 else 0
-        st.metric("Overdue SAE Reporting", f"{overdue_sae_rate:.2f}%", f"{overdue_saes} Overdue Reports", "inverse")
-        st.markdown("<p class='kpi-explanation'>The percentage of all Serious Adverse Events that were not reported within the mandated timeframe. The target is always 0%.</p>", unsafe_allow_html=True)
+        st.metric("Overdue SAE Reporting", f"{overdue_sae_rate:.2f}%", f"{overdue_saes} Overdue", "inverse")
 
     with kpi_col6:
         enrolled_subjects = portfolio_df['Subjects_Enrolled'].sum()
         first_pass_rate = 1 - (len(findings_df) / (enrolled_subjects * 5)) if enrolled_subjects > 0 else 1.0
-        st.metric("First Pass Quality Rate", f"{first_pass_rate:.1%}", "Target > 95%", "normal")
-        st.markdown("<p class='kpi-explanation'>An estimate of documents completed correctly the first time, measuring how well quality is 'built-in' to trial processes.</p>", unsafe_allow_html=True)
+        st.metric("First Pass Quality", f"{first_pass_rate:.1%}", "Target > 95%", "normal")
 
     with kpi_col7:
         avg_query_rate = portfolio_df['Data_Query_Rate'].mean()
         data_integrity_score = (1 - avg_query_rate) * 100
-        st.metric("Data Integrity Score", f"{data_integrity_score:.1f}%", f"{avg_query_rate:.2f} Queries/Subject", "normal")
-        st.markdown("<p class='kpi-explanation'>A proxy for data cleanliness, calculated as (1 - Average Data Query Rate). A higher score indicates cleaner source data.</p>", unsafe_allow_html=True)
+        st.metric("Data Integrity Score", f"{data_integrity_score:.1f}%", f"{avg_query_rate:.2f} Q/Subj", "normal")
 
     with kpi_col8:
         proactive_audits = findings_df['Is_Proactive'].sum()
         total_audits = len(findings_df)
         proactive_ratio = (proactive_audits / total_audits) * 100 if total_audits > 0 else 0
-        st.metric("Proactive Audit Ratio", f"{proactive_ratio:.1f}%", f"{proactive_audits} Proactive Audits", "normal")
-        st.markdown("<p class='kpi-explanation'>The percentage of findings from proactive (e.g., risk-based) audits. A higher ratio indicates a more mature QA program.</p>", unsafe_allow_html=True)
+        st.metric("Proactive Audit Ratio", f"{proactive_ratio:.1f}%", f"{proactive_audits} Proactive", "normal")
 
     with kpi_col9:
         current_certs = len(team_df[team_df['GCP_Certification_Status'] == 'Current'])
         total_auditors = len(team_df)
         team_readiness = (current_certs / total_auditors) * 100 if total_auditors > 0 else 0
         expiring_soon = total_auditors - current_certs
-        st.metric("Team Readiness (GCP Certified)", f"{team_readiness:.0f}%", f"{expiring_soon} Expiring Soon", "off")
-        st.markdown("<p class='kpi-explanation'>Percentage of the QA team whose mandatory certifications are current (not expiring <90 days). A leading indicator of team preparedness.</p>", unsafe_allow_html=True)
+        st.metric("Team Readiness (GCP)", f"{team_readiness:.0f}%", f"{expiring_soon} Expiring", "off")
         
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -420,6 +382,9 @@ def render_command_center(portfolio_df, findings_df, team_df):
         with col1:
             overdue_findings = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].sort_values(by='Finding_Date').reset_index()
             if not overdue_findings.empty: st.error(f"**Overdue CAPA:** Finding `{overdue_findings.iloc[0]['Finding_ID']}` on trial `{overdue_findings.iloc[0]['Trial_ID']}` ({overdue_findings.iloc[0]['Risk_Level']}) is overdue.", icon="🔥")
+            if 'Strain' not in team_df.columns:
+                team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
+                team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
             most_strained = team_df.sort_values(by='Strain', ascending=False).iloc[0]
             if most_strained['Strain'] > 3.0: st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon="⚠️")
             criticals_per_trial = findings_df[findings_df['Risk_Level'] == 'Critical'].groupby('Trial_ID').size().sort_values(ascending=False)
@@ -429,70 +394,46 @@ def render_command_center(portfolio_df, findings_df, team_df):
             fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
             st.plotly_chart(fig, use_container_width=True)
             
-    # CORRECTED: This code is now INSIDE the function.
     with plot_tabs[1]:
         st.markdown("##### Monthly Finding Velocity & Active Backlog Analysis")
         st.info("💡 **Expert Tip:** Compare the stacked 'Opened' bar to the solid 'Closed' bar each month. If 'Opened' is consistently taller, the backlog (blue line) will rise. Focus on months where the red (Critical) or orange (Major) segments are large.", icon="❓")
-        
         findings_df['Finding_Month'] = findings_df['Finding_Date'].dt.to_period('M')
         opened_by_risk = pd.crosstab(findings_df['Finding_Month'], findings_df['Risk_Level'])
-        
         for risk in ['Critical', 'Major', 'Minor']:
             if risk not in opened_by_risk.columns:
                 opened_by_risk[risk] = 0
         opened_by_risk = opened_by_risk[['Critical', 'Major', 'Minor']]
-
         closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date'])
         if not closed_by_month.empty:
             closed_by_month['Closure_Month'] = closed_by_month['CAPA_Closure_Date'].dt.to_period('M')
             closed_counts = closed_by_month.groupby('Closure_Month').size().rename('Closed')
         else:
             closed_counts = pd.Series(name='Closed', dtype='int64')
-
         velocity_df = pd.concat([opened_by_risk, closed_counts], axis=1).fillna(0)
         velocity_df['Total_Opened'] = velocity_df[['Critical', 'Major', 'Minor']].sum(axis=1)
-        
         velocity_df['Cumulative_Opened'] = velocity_df['Total_Opened'].cumsum()
         velocity_df['Cumulative_Closed'] = velocity_df['Closed'].cumsum()
         velocity_df['Active_Backlog'] = velocity_df['Cumulative_Opened'] - velocity_df['Cumulative_Closed']
-        
         velocity_df.index = velocity_df.index.to_timestamp()
-
         fig = go.Figure()
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Critical'], name='Opened: Critical', marker_color='#E63946'))
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Major'], name='Opened: Major', marker_color='#FFC72C'))
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Minor'], name='Opened: Minor', marker_color='#A8DADC'))
         fig.add_trace(go.Bar(x=velocity_df.index, y=velocity_df['Closed'], name='Closed (All Risks)', marker_color='#457B9D', hovertemplate="<b>%{x|%B %Y}</b><br>Closed: %{y}<extra></extra>"))
         fig.add_trace(go.Scatter(x=velocity_df.index, y=velocity_df['Active_Backlog'], name='Active Backlog Size', mode='lines+markers', line=dict(color='#005A9C', width=3), yaxis='y2', hovertemplate="<b>%{x|%B %Y}</b><br>Backlog: %{y}<extra></extra>"))
-        
-        fig.update_layout(
-            barmode='stack',
-            title_text='<b>Monthly Finding Velocity vs. Active Backlog Trend</b>',
-            yaxis=dict(title='Monthly Count'),
-            yaxis2=dict(title='Total Open Backlog', overlaying='y', side='right', showgrid=False),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            plot_bgcolor='white'
-        )
+        fig.update_layout(barmode='stack', title_text='<b>Monthly Finding Velocity vs. Active Backlog Trend</b>', yaxis=dict(title='Monthly Count'), yaxis2=dict(title='Total Open Backlog', overlaying='y', side='right', showgrid=False), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), plot_bgcolor='white')
         st.plotly_chart(fig, use_container_width=True)
 
-    # CORRECTED: This code is now INSIDE the function.
     with plot_tabs[2]:
         st.markdown("##### Interactive Auditor Skill & Performance Matrix")
-        
         skill_cols = [col for col in team_df.columns if '_Skill' in col]
         team_df['Overall_Skill'] = team_df[skill_cols].mean(axis=1)
         skill_options = {col.replace('_', ' ').replace(' Skill', ''): col for col in skill_cols}
-        
         col1, col2 = st.columns([1, 2])
         with col1:
             st.info("💡 **Expert Tip:** Select a skill from the dropdown to color-code the auditors. This helps you find the right expert and assess their current workload and efficiency simultaneously.", icon="❓")
-            selected_skill_label = st.selectbox(
-                "Color-code auditors by skill:",
-                options=list(skill_options.keys()),
-                index=0
-            )
+            selected_skill_label = st.selectbox("Color-code auditors by skill:", options=list(skill_options.keys()), index=0)
             selected_skill_col = skill_options[selected_skill_label]
-
         with col2:
             fig = px.scatter(
                 team_df,
@@ -511,18 +452,14 @@ def render_command_center(portfolio_df, findings_df, team_df):
                 size_max=40,
                 height=500
             )
-
             mean_x = team_df['Audits_Conducted_YTD'].mean()
             mean_y = team_df['Avg_Report_Turnaround_Days'].mean()
-            
             fig.add_hline(y=mean_y, line_dash="dot", line_color="grey")
             fig.add_vline(x=mean_x, line_dash="dot", line_color="grey")
-
             fig.add_annotation(x=mean_x*1.2, y=mean_y*1.2, text="<b>Needs Coaching</b><br>(High Workload, Low Efficiency)", showarrow=False, font=dict(color="goldenrod"))
             fig.add_annotation(x=mean_x*1.2, y=mean_y*0.8, text="<b>Top Performers</b><br>(High Workload, High Efficiency)", showarrow=False, font=dict(color="darkgreen"))
             fig.add_annotation(x=mean_x*0.8, y=mean_y*0.8, text="<b>Growth Potential</b><br>(Low Workload, High Efficiency)", showarrow=False, font=dict(color="darkblue"))
             fig.add_annotation(x=mean_x*0.8, y=mean_y*1.2, text="<b>Efficiency Opportunity</b><br>(Low Workload, Low Efficiency)", showarrow=False, font=dict(color="firebrick"))
-
             fig.update_traces(
                 textposition='top center',
                 hovertemplate=(
@@ -540,8 +477,11 @@ def render_command_center(portfolio_df, findings_df, team_df):
     with plot_tabs[3]:
         st.markdown("##### Interactive Risk Exploration Tool")
         risk_summary = findings_df.groupby('Trial_ID').agg(Risk_Score=('Risk_Score', 'sum'), Total_Findings=('Finding_ID', 'count')).reset_index()
-        risk_counts = pd.crosstab(findings_df['Trial_ID'], findings_df['Risk_Level']).reset_index()
-        risk_counts = risk_counts.rename(columns={'Critical': 'Critical_Count', 'Major': 'Major_Count', 'Minor': 'Minor_Count'})
+        risk_counts = pd.crosstab(findings_df['Trial_ID'], findings_df['Risk_Level'])
+        for risk in ['Critical', 'Major', 'Minor']:
+            if risk not in risk_counts.columns:
+                risk_counts[risk] = 0
+        risk_counts = risk_counts.reset_index().rename(columns={'Critical': 'Critical_Count', 'Major': 'Major_Count', 'Minor': 'Minor_Count'})
         open_capa_counts = findings_df[findings_df['CAPA_Status'] != 'Closed-Effective'].groupby('Trial_ID').size().reset_index(name='Open_CAPA_Count')
         risk_model, encoder, model_features, _ = get_risk_model_with_importance(portfolio_df)
         X_all_cat = portfolio_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]
@@ -560,7 +500,6 @@ def render_command_center(portfolio_df, findings_df, team_df):
             st.info("💡 **Expert Tip:** Use these controls to analyze risk from different perspectives. Switch to 'Predicted Risk' to be proactive!")
             view_selection = st.selectbox("Select Risk View (Box Size):", options=["Observed Risk (from past findings)", "Predicted Risk (from model)"], index=0)
             color_selection = st.selectbox("Select Metric (Box Color):", options=["Number of Critical Findings", "Number of Open CAPAs", "Average Finding Severity"], index=0)
-
         with col2:
             view_column_map = {"Observed Risk (from past findings)": "Risk_Score", "Predicted Risk (from model)": "Predicted_Risk"}
             color_column_map = {"Number of Critical Findings": "Critical_Count", "Number of Open CAPAs": "Open_CAPA_Count", "Average Finding Severity": "Avg_Risk_Severity"}
@@ -691,23 +630,64 @@ def render_systemic_risk(findings_df, portfolio_df):
 
 def render_pi_performance(portfolio_df, findings_df):
     st.subheader("Principal Investigator (PI) Performance Oversight", divider="blue")
-    st.markdown("_This section enables granular analysis of quality metrics at the individual PI level, benchmarked against their Disease Team peers. It is a tool for targeted coaching and support._")
-    with st.container(border=True):
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("##### Select Investigator")
-            all_teams = sorted(portfolio_df['Disease_Team'].unique())
-            selected_team = st.selectbox("Select a Disease Team:", options=all_teams, key="team_select")
-            available_pis = sorted(portfolio_df[portfolio_df['Disease_Team'] == selected_team]['PI_Name'].unique())
-            selected_pi = st.selectbox("Select a PI:", options=available_pis, key="pi_select")
+    st.markdown("_This section provides tools for both team-level oversight and individual PI coaching, enabling targeted support and recognition._")
 
-        pi_findings = findings_df[findings_df['PI_Name'] == selected_pi]
-        team_findings = findings_df[findings_df['Disease_Team'] == selected_team]
+    all_teams = sorted(portfolio_df['Disease_Team'].unique())
+    selected_team = st.selectbox("Select a Disease Team to Analyze:", options=all_teams, key="team_select")
+    
+    team_trials = portfolio_df[portfolio_df['Disease_Team'] == selected_team]
+    team_findings = findings_df[findings_df['Disease_Team'] == selected_team]
+    
+    # --- 1. Team-Level Quality Scorecard ---
+    with st.container(border=True):
+        st.markdown(f"##### 🏆 Disease Team Quality Scorecard: **{selected_team}**")
+        st.info("💡 **Expert Tip:** Use this scorecard for Disease Team meetings to identify top performers for recognition and investigators who may need additional support or resources.", icon="❓")
         
-        with col2:
-            st.markdown(f"##### Performance Snapshot: {selected_pi}")
-            m_col1, m_col2, m_col3 = st.columns(3)
+        if not team_trials.empty:
+            # Aggregate metrics by PI
+            pi_metrics = team_trials.groupby('PI_Name').agg(
+                Trials_Open=('Trial_ID', 'count'),
+                Total_Enrolled=('Subjects_Enrolled', 'sum'),
+                Avg_Accrual=('Avg_Accrual_Per_Month', 'mean')
+            ).reset_index()
+
+            pi_findings_summary = team_findings.groupby('PI_Name').agg(
+                Critical_Findings=('Risk_Level', lambda x: (x == 'Critical').sum()),
+                Major_Findings=('Risk_Level', lambda x: (x == 'Major').sum()),
+                Overdue_CAPAs=('CAPA_Status', lambda x: (x == 'Overdue').sum()),
+                Avg_Closure_Days=('Days_to_Close', 'mean')
+            ).reset_index()
             
+            # Merge into a final scorecard
+            scorecard_df = pd.merge(pi_metrics, pi_findings_summary, on='PI_Name', how='left').fillna(0)
+            scorecard_df = scorecard_df.sort_values(by=['Critical_Findings', 'Major_Findings', 'Overdue_CAPAs'], ascending=[False, False, False])
+            
+            st.dataframe(
+                scorecard_df.style.format({
+                    'Avg_Accrual': '{:.1f}',
+                    'Avg_Closure_Days': '{:.1f}'
+                }).background_gradient(
+                    cmap='Reds', subset=['Critical_Findings', 'Major_Findings', 'Overdue_CAPAs']
+                ).background_gradient(
+                    cmap='Greens', subset=['Avg_Accrual']
+                ).bar(subset=['Total_Enrolled'], color='#5cadff'),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("No trial data available for this team.")
+
+    # --- 2. Individual PI Drill-Down ---
+    with st.container(border=True):
+        st.markdown("##### 🧑‍🔬 Individual Investigator Drill-Down")
+        available_pis = sorted(team_trials['PI_Name'].unique())
+        if available_pis:
+            selected_pi = st.selectbox("Select a PI for Detailed Analysis:", options=available_pis, key="pi_select")
+            
+            pi_findings = findings_df[findings_df['PI_Name'] == selected_pi]
+            
+            # The individual snapshot and barchart from the original function
+            m_col1, m_col2, m_col3 = st.columns(3)
             pi_major_findings = pi_findings[pi_findings['Risk_Level'].isin(['Major', 'Critical'])].shape[0]
             team_major_findings_grouped = team_findings[team_findings['Risk_Level'].isin(['Major', 'Critical'])].groupby('PI_Name').size()
             team_avg_major_findings = team_major_findings_grouped.mean() if not team_major_findings_grouped.empty else 0
@@ -721,65 +701,181 @@ def render_pi_performance(portfolio_df, findings_df):
             team_overdue_grouped = team_findings.groupby('PI_Name')['CAPA_Status'].apply(lambda x: (x == 'Overdue').sum())
             team_avg_overdue = team_overdue_grouped.mean() if not team_overdue_grouped.empty else 0
             m_col3.metric("Overdue CAPAs", f"{pi_overdue}", f"Team Avg: {team_avg_overdue:.1f}", delta_color="inverse")
-            
-        st.markdown("---")
-        st.info(f"💡 **Expert Tip:** How does {selected_pi}'s performance compare to their team average? Significant deviations present a data-driven opportunity for a supportive coaching conversation.", icon="❓")
-        st.plotly_chart(plot_pi_findings_barchart_sme(pi_findings, selected_pi), use_container_width=True)
+
+            st.plotly_chart(plot_pi_findings_barchart_sme(pi_findings, selected_pi), use_container_width=True)
+        else:
+            st.info("No PIs found for the selected team.")
 
 def render_organizational_capability(team_df, initiatives_df, audits_df, findings_df):
     st.subheader("Organizational Capability & Strategic Oversight", divider="blue")
     st.markdown("_This section assesses the capacity of the QA team and tracks progress and financial health of key strategic objectives._")
 
     main_tabs = st.tabs(["📊 Team Performance & Workload", "🚀 Strategic Initiatives"])
+    
     with main_tabs[0]:
         st.markdown("##### Auditor Performance, Skills, and Process Efficiency")
-        with st.container(border=True):
-            st.markdown("###### Auditor Workload & Performance Analysis")
-            st.info("💡 **Expert Tip:** Use the quadrants to guide management. 'High Strain' auditors may need workload redistribution. 'Top Performers' are candidates for mentoring others. 'Needs Coaching' auditors could benefit from targeted training to improve efficiency.", icon="❓")
-            st.plotly_chart(plot_auditor_strain_sme(team_df), use_container_width=True)
-        plot_tabs = st.tabs(["Skill Matrix", "Efficiency Trends", "Audit Yield", "Compliance Status"])
+        
+        auditor_options = ['All Auditors'] + sorted(team_df['Auditor'].unique())
+        selected_auditors = st.multiselect(
+            "Select Auditors to Analyze:",
+            options=auditor_options,
+            default=['All Auditors']
+        )
+
+        if 'All Auditors' in selected_auditors or not selected_auditors:
+            filtered_team_df = team_df.copy()
+            filtered_audit_yield_df = audit_yield_df.copy()
+        else:
+            filtered_team_df = team_df[team_df['Auditor'].isin(selected_auditors)]
+            filtered_audit_yield_df = audit_yield_df[audit_yield_df['Auditor'].isin(selected_auditors)]
+
+        plot_tabs = st.tabs(["🎯 Skill & Performance Quadrant", "📈 Efficiency & Workload Trends", "🔍 Audit Yield Analysis", "✅ Compliance & Readiness"])
+
         with plot_tabs[0]:
-            st.markdown("###### Team Skill & Competency Matrix")
-            st.info("💡 **Expert Tip:** This matrix provides a strategic view of team capabilities versus portfolio needs. Identify skill gaps (light-colored cells) to prioritize cross-training, targeted hiring, or professional development.", icon="❓")
-            skill_cols = [col for col in team_df.columns if '_Skill' in col]
-            fig = px.imshow(team_df.set_index('Auditor')[skill_cols], text_auto=True, aspect="auto", title="<b>Auditor Skill Level Matrix (1-5 Scale)</b>", labels=dict(x="Specialized Skill", y="Auditor", color="Skill Level"), color_continuous_scale='Cividis')
+            st.markdown("###### Skill & Performance Quadrant Analysis")
+            st.info("💡 **Expert Tip:** This chart combines skill with performance. Use it to identify auditors who are both highly skilled and efficient (top-right quadrant) as potential mentors, or those who may need coaching (bottom-left).", icon="❓")
+            
+            skill_cols = [col for col in filtered_team_df.columns if '_Skill' in col]
+            filtered_team_df['Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
+            
+            if 'Strain' not in filtered_team_df.columns:
+                filtered_team_df['Skill_Factor'] = filtered_team_df['IIT_Oversight_Skill'] + filtered_team_df['FDA_Inspection_Mgmt_Skill']
+                filtered_team_df['Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
+
+            fig = px.scatter(
+                filtered_team_df,
+                x='Avg_Skill_Score',
+                y='Avg_Report_Turnaround_Days',
+                size='Audits_Conducted_YTD',
+                color='Strain',
+                text='Auditor',
+                title='<b>Auditor Skill vs. Efficiency Quadrant</b>',
+                labels={
+                    'Avg_Skill_Score': 'Average Skill Score (All Categories)',
+                    'Avg_Report_Turnaround_Days': 'Efficiency (Lower is Better)',
+                    'Audits_Conducted_YTD': 'Workload (Audits YTD)',
+                    'Strain': 'Strain Index'
+                },
+                color_continuous_scale=px.colors.sequential.RdYlGn_r # Reversed: Red is high strain
+            )
+            
+            fig.update_yaxes(autorange="reversed")
+            
+            mean_x = filtered_team_df['Avg_Skill_Score'].mean()
+            mean_y = filtered_team_df['Avg_Report_Turnaround_Days'].mean()
+            
+            fig.add_hline(y=mean_y, line_dash="dot", line_color="grey", annotation_text="Team Avg. Efficiency")
+            fig.add_vline(x=mean_x, line_dash="dot", line_color="grey", annotation_text="Team Avg. Skill")
+            
+            fig.update_traces(textposition='top center')
+            fig.update_layout(plot_bgcolor='white', height=500)
             st.plotly_chart(fig, use_container_width=True)
+
         with plot_tabs[1]:
-            st.markdown("###### Audit Efficiency & Report Turnaround Trend")
-            st.info("💡 **Expert Tip:** Monitor the trend line. A sustained upward trend in report turnaround time is a leading indicator of team burnout or systemic bottlenecks in the reporting process that require immediate attention.", icon="❓")
-            trend_df = audits_df.copy()
+            st.markdown("###### Historical Workload vs. Efficiency Trends")
+            st.info("💡 **Expert Tip:** Watch for divergence. If the blue workload line rises while the red efficiency line also rises (gets worse), it's a strong indicator of impending team burnout or process bottlenecks.", icon="❓")
+            
+            trend_df = filtered_audit_yield_df.copy()
             trend_df['Quarter'] = pd.to_datetime(trend_df['Audit_Date']).dt.to_period('Q').astype(str)
-            avg_turnaround_trend = trend_df.groupby('Quarter')['Turnaround_Time'].mean().reset_index()
-            fig = px.line(avg_turnaround_trend, x='Quarter', y='Turnaround_Time', markers=True, title="<b>Average Audit Report Turnaround Time (Quarterly)</b>", labels={'Quarter': 'Quarter', 'Turnaround_Time': 'Average Turnaround (Days)'})
-            fig.update_layout(plot_bgcolor='white')
+            
+            quarterly_summary = trend_df.groupby('Quarter').agg(
+                Avg_Turnaround=('Turnaround_Time', 'mean'),
+                Total_Audits=('Audit_ID', 'count')
+            ).reset_index()
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=quarterly_summary['Quarter'],
+                y=quarterly_summary['Total_Audits'],
+                name='Audits Conducted',
+                marker_color='#A8DADC'
+            ))
+            fig.add_trace(go.Scatter(
+                x=quarterly_summary['Quarter'],
+                y=quarterly_summary['Avg_Turnaround'],
+                name='Avg. Turnaround (Days)',
+                yaxis='y2',
+                mode='lines+markers',
+                line=dict(color='#E63946', width=3)
+            ))
+            
+            fig.update_layout(
+                title_text="<b>Quarterly Workload vs. Report Turnaround Efficiency</b>",
+                yaxis=dict(title='Total Audits Conducted'),
+                yaxis2=dict(title='Avg. Turnaround (Days)', overlaying='y', side='right', showgrid=False, autorange="reversed"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                plot_bgcolor='white'
+            )
             st.plotly_chart(fig, use_container_width=True)
+
         with plot_tabs[2]:
-            st.markdown("###### Audit Yield & Finding Rate Analysis")
-            st.info("💡 **Expert Tip:** This chart measures audit quality and consistency. An auditor with a consistently low finding rate may require coaching on audit techniques. Conversely, a high critical/major finding rate for an auditor could indicate they are exceptionally thorough or are being assigned to the highest-risk trials.", icon="❓")
-            findings_per_audit = findings_df.groupby(['Audit_ID', 'Risk_Level']).size().unstack(fill_value=0).reset_index()
-            audit_yield_df = pd.merge(audits_df, findings_per_audit, on='Audit_ID', how='left').fillna(0)
-            avg_yield_by_auditor = audit_yield_df.groupby('Auditor')[['Critical', 'Major', 'Minor']].mean().reset_index()
-            fig = px.bar(avg_yield_by_auditor, x='Auditor', y=['Critical', 'Major', 'Minor'], title="<b>Average Audit Yield by Auditor and Finding Risk Level</b>", labels={'value': 'Average Findings per Audit', 'Auditor': 'Auditor'}, color_discrete_map={'Critical': '#E63946', 'Major': '#FFC72C', 'Minor': '#005A9C'})
+            st.markdown("###### Comparative Audit Yield Analysis")
+            st.info("💡 **Expert Tip:** This chart shows the 'quality' of audits. Are some auditors finding significantly more critical issues than their peers? This can guide training, calibration sessions, or future audit assignments.", icon="❓")
+            
+            avg_yield_by_auditor = filtered_audit_yield_df.groupby('Auditor')[['Critical', 'Major', 'Minor']].mean()
+            team_avg = avg_yield_by_auditor.mean().rename('Team Average')
+            
+            plot_data = pd.concat([avg_yield_by_auditor, pd.DataFrame(team_avg).T])
+
+            fig = go.Figure()
+            colors = {'Critical': '#E63946', 'Major': '#FFC72C', 'Minor': '#457B9D'}
+            for risk_level in ['Critical', 'Major', 'Minor']:
+                fig.add_trace(go.Bar(
+                    x=plot_data.index,
+                    y=plot_data[risk_level],
+                    name=risk_level,
+                    marker_color=colors[risk_level]
+                ))
+
+            fig.update_layout(
+                barmode='stack',
+                title_text="<b>Average Findings per Audit by Auditor vs. Team Average</b>",
+                yaxis_title="Avg. Findings per Audit",
+                xaxis_title=None,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                plot_bgcolor='white'
+            )
             st.plotly_chart(fig, use_container_width=True)
+            
         with plot_tabs[3]:
-            st.markdown("###### QA Team Certification & Training Compliance")
-            st.info("💡 **Expert Tip:** This is a direct risk management tool for your own department. An 'Expired' certification is a significant compliance risk that would be a major finding in a regulatory inspection of the QA unit itself. Use this to manage training schedules and budgets.", icon="❓")
-            compliance_df = team_df['GCP_Certification_Status'].value_counts().reset_index()
-            compliance_df.columns = ['Status', 'Count']
-            fig = px.bar(compliance_df, x='Status', y='Count', text='Count', color='Status', title="<b>Team GCP Certification Compliance Status</b>", color_discrete_map={'Current': 'green', 'Expires <90d': 'orange', 'Expired': 'red'})
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # <--- FIX: This entire block was de-indented. It is now correctly indented.
+            st.markdown("###### QA Team Compliance & Readiness")
+            st.info("💡 **Expert Tip:** This provides an immediate view of departmental compliance risk. An expired certification is a direct liability during an inspection of the QA unit itself.", icon="❓")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                compliance_df = filtered_team_df['GCP_Certification_Status'].value_counts().reset_index()
+                compliance_df.columns = ['Status', 'Count']
+                
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=len(filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Current']),
+                    number={'suffix': f" / {len(filtered_team_df)}"},
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    title={'text': "Auditors with Current GCP Certification"},
+                    gauge={'axis': {'range': [None, len(filtered_team_df)]},
+                           'bar': {'color': "#457B9D"},
+                           'steps': [
+                               {'range': [0, len(filtered_team_df) * 0.8], 'color': "#E63946"},
+                               {'range': [len(filtered_team_df) * 0.8, len(filtered_team_df) * 0.95], 'color': "#FFC72C"},
+                           ]}
+                ))
+                fig.update_layout(height=250, margin=dict(t=40, b=40))
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                expiring_soon = filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Expires <90d']
+                if not expiring_soon.empty:
+                    st.warning("Certifications Expiring Soon:")
+                    st.dataframe(expiring_soon[['Auditor']], use_container_width=True, hide_index=True)
+                else:
+                    st.success("All team certifications are current for the next 90 days.")
+
     with main_tabs[1]:
         st.markdown("##### Strategic Initiatives & Financial Oversight")
         st.info("💡 **Expert Tip:** A CPI or SPI value < 1.0 indicates a project is over budget or behind schedule, respectively. This allows for proactive intervention before projects go significantly off-track.", icon="❓")
-        
-        # FIX: Ensure 'today' is timezone-naive to match the naive Start_Date
-        today = pd.to_datetime(datetime.datetime.now()) # Use datetime.now() instead of date.today()
+        today = pd.to_datetime(datetime.datetime.now())
         initiatives_df['Start_Date'] = pd.to_datetime(initiatives_df['Start_Date'])
         initiatives_df['End_Date'] = pd.to_datetime(initiatives_df['End_Date'])
-        
         initiatives_df['Days_Elapsed'] = (today - initiatives_df['Start_Date']).dt.days
         initiatives_df['Total_Days_Planned'] = (initiatives_df['End_Date'] - initiatives_df['Start_Date']).dt.days
         initiatives_df['Daily_Burn_Rate'] = initiatives_df.apply(lambda row: row['Spent_USD'] / row['Days_Elapsed'] if row['Days_Elapsed'] > 0 else 0, axis=1)
@@ -799,6 +895,38 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             
         st.dataframe(format_financials(initiatives_df[['Initiative', 'Lead', 'Status', 'Percent_Complete', 'Budget_USD', 'Spent_USD', 'Projected_Total_Cost', 'Projected_Over_Under', 'CPI', 'SPI']]), use_container_width=True)
         st.caption("CPI (Cost Performance Index) & SPI (Schedule Performance Index): > 1.0 is favorable (green), < 1.0 is unfavorable (red).")
+        
+        st.markdown("---")
+        st.markdown("###### 🧪 Initiative Planner & Budget Simulator")
+        st.info("💡 **Expert Tip:** Model a new QA initiative to understand its potential financial impact before committing resources. This allows for data-driven budget requests.", icon="❓")
+
+        with st.form("budget_simulator_form"):
+            s_col1, s_col2, s_col3 = st.columns(3)
+            with s_col1:
+                new_initiative_name = st.text_input("Initiative Name", "New eRegulatory System Rollout")
+                new_budget = st.number_input("Proposed Budget (USD)", min_value=5000, max_value=250000, value=50000, step=1000)
+            with s_col2:
+                new_start_date = st.date_input("Proposed Start Date", datetime.date.today())
+                new_end_date = st.date_input("Proposed End Date", datetime.date.today() + datetime.timedelta(days=365))
+            with s_col3:
+                num_personnel = st.slider("Dedicated Personnel (FTE)", min_value=0.25, max_value=5.0, value=1.5, step=0.25)
+                avg_salary = 110000 # Assume an average burdened salary for planning
+                
+            submitted = st.form_submit_button("Simulate Financials")
+
+        if submitted:
+            if new_end_date <= new_start_date:
+                st.error("End Date must be after Start Date.")
+            else:
+                total_days = (new_end_date - new_start_date).days
+                personnel_cost = (total_days / 365) * num_personnel * avg_salary
+                discretionary_budget = new_budget - personnel_cost
+                
+                st.success(f"**Simulation Results for '{new_initiative_name}'**")
+                sim_col1, sim_col2, sim_col3 = st.columns(3)
+                sim_col1.metric("Total Project Duration", f"{total_days} days")
+                sim_col2.metric("Projected Personnel Cost", f"${personnel_cost:,.0f}")
+                sim_col3.metric("Remaining Discretionary Budget", f"${discretionary_budget:,.0f}", help="Funds available for software, training, etc., after accounting for salaries.")
 
 def render_quality_impact(portfolio_df, findings_df):
     st.subheader("Quality Impact on Trial Performance", divider="blue")
@@ -867,7 +995,6 @@ def render_quality_impact(portfolio_df, findings_df):
 # ======================================================================================
 # SECTION 5: MAIN APP ORCHESTRATION
 # ======================================================================================
-# REVISED: Cleaned up and fully corrected main orchestration function.
 def main():
     with st.sidebar:
         st.markdown("## Moores Cancer Center")
@@ -884,11 +1011,9 @@ def main():
         st.header("Generate Executive Report")
         st.info("Download a PowerPoint summary of the current QA program status for leadership review.")
         
-        # CORRECTED: Data unpacking is synchronized with the function's return signature.
         portfolio_df_sidebar, findings_df_sidebar, team_df_sidebar, _, _ = generate_master_data()
        
         risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
-        # CORRECTED: Robustly add Risk_Score before creating subsets.
         findings_df_sidebar['Risk_Score'] = findings_df_sidebar['Risk_Level'].map(risk_weights)
         open_findings_sidebar = findings_df_sidebar[~findings_df_sidebar['CAPA_Status'].isin(['Closed-Effective'])].copy()
         
@@ -913,10 +1038,8 @@ def main():
     st.title("🔬 Scientific QA Command Center")
     st.markdown("An advanced analytics dashboard for the Assistant Director of Quality Assurance.")
 
-    # CORRECTED: Data unpacking is synchronized with the function's return signature.
     portfolio_df, findings_df, team_df, initiatives_df, audits_df = generate_master_data()
     
-    # CORRECTED: Add helper columns here to be available for all rendering functions.
     findings_df['Closure_Date'] = findings_df.apply(lambda row: row['Finding_Date'] + pd.to_timedelta(np.random.randint(5, 60), unit='d') if row['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
     findings_df['Days_to_Close'] = (findings_df['Closure_Date'] - findings_df['Finding_Date']).dt.days
 
