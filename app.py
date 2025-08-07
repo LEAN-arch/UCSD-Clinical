@@ -186,9 +186,21 @@ def get_finding_category_model(_portfolio_df, _findings_df):
 @st.cache_data(ttl=3600)
 def generate_prophet_forecast(_findings_df):
     df_prophet = _findings_df[['Finding_Date']].copy()
-    df_prophet['y'] = 1
+    # This column is not used in the final dataframe, so we can remove it for clarity
+    # df_prophet['y'] = 1 
     df_prophet = df_prophet.rename(columns={'Finding_Date': 'ds'})
-    monthly_df = df_prophet.set_index('ds').resample('ME').size().reset_index() # Use size() for performance
+    
+    # Create the monthly dataframe
+    monthly_df = df_prophet.set_index('ds').resample('ME').size().reset_index()
+    
+    # FIX: Rename the default count column (named 0) to 'y' as required by Prophet
+    monthly_df = monthly_df.rename(columns={0: 'y'})
+    
+    # Check for empty dataframe after resampling to prevent Prophet errors
+    if monthly_df.empty:
+        # Return empty forecast and the (also empty) monthly_df
+        return pd.DataFrame(), monthly_df
+
     model = Prophet(yearly_seasonality=True, daily_seasonality=False)
     model.fit(monthly_df)
     future = model.make_future_dataframe(periods=12, freq='ME')
