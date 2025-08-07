@@ -721,10 +721,10 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
 if 'All Auditors' in selected_auditors or not selected_auditors:
             filtered_team_df = team_df.copy()
             filtered_audit_yield_df = audit_yield_df.copy()
-        else:
-            # FIX: Add .copy() to create an independent DataFrame and resolve the warning
-            filtered_team_df = team_df[team_df['Auditor'].isin(selected_auditors)].copy()
-            filtered_audit_yield_df = audit_yield_df[audit_yield_df['Auditor'].isin(selected_auditors)].copy()
+            else:
+                # FIX: Add .copy() to create an independent DataFrame and resolve the warning
+                filtered_team_df = team_df[team_df['Auditor'].isin(selected_auditors)].copy()
+                filtered_audit_yield_df = audit_yield_df[audit_yield_df['Auditor'].isin(selected_auditors)].copy()
 
         plot_tabs = st.tabs(["🎯 Skill & Performance Quadrant", "📈 Efficiency & Workload Trends", "🔍 Audit Yield Analysis", "✅ Compliance & Readiness"])
 
