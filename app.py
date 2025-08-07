@@ -439,16 +439,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.info("💡 **Expert Tip:** Use this matrix for strategic audit assignment. Assign auditors with high skill levels (darker blue) to the most complex and high-risk trials within a given disease area to maximize effectiveness.", icon="❓")
         fig = px.imshow(team_df.set_index('Auditor')[['IIT_Oversight_Skill', 'FDA_Inspection_Mgmt_Skill']], text_auto=True, aspect="auto", title="<b>Auditor Skill Level Matrix (1-5 Scale)</b>", labels=dict(x="Specialized Skill", y="Auditor", color="Skill Level"), color_continuous_scale='Blues')
         st.plotly_chart(fig, use_container_width=True)
-        
-    with plot_tabs[3]:
-        st.markdown("##### Portfolio Risk Treemap")
-        st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
-        risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
-        risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
-        fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
-        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-        st.plotly_chart(fig, use_container_width=True)
-        
+               
     with plot_tabs[3]:
         st.markdown("##### Portfolio Risk Treemap")
         st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
