@@ -61,15 +61,26 @@ def generate_master_data():
         'Screen_Fail_Rate': np.random.uniform(0.10, 0.50, num_trials),
         'Avg_Accrual_Per_Month': np.random.uniform(0.5, 5.0, num_trials),
         'Data_Query_Rate': np.random.uniform(0.05, 0.25, num_trials),
-        'Last_Audit_Date': pd.to_datetime([datetime.date.today() - datetime.timedelta(days=np.random.randint(30, 730)) for _ in range(num_trials)])
+        'Last_Audit_Date': pd.to_datetime([datetime.date.today() - datetime.timedelta(days=np.random.randint(30, 730)) for _ in range(num_trials)]),
+        'Days_to_Activation': np.random.randint(60, 200, num_trials),
+        'Total_SAEs': np.random.randint(0, 15, num_trials),
     }
     portfolio_df = pd.DataFrame(portfolio_data)
+    portfolio_df['Overdue_SAE_Reports'] = (portfolio_df['Total_SAEs'] * np.random.uniform(0.0, 0.15, num_trials)).astype(int)
 
     pis_by_team = {team: [f'Dr. {team_initials}{i}' for i in range(1,5)] for team, team_initials in zip(portfolio_df['Disease_Team'].unique(), ['L', 'U', 'B', 'GI', 'GU', 'M'])}
     portfolio_df['PI_Name'] = portfolio_df.apply(lambda row: np.random.choice(pis_by_team[row['Disease_Team']]), axis=1)
 
     finding_categories = ['Informed Consent Process', 'Source Data Verification', 'Investigational Product Accountability', 'Regulatory Binder Mgmt', 'AE/SAE Reporting', 'Protocol Adherence']
-    findings_data = {'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)], 'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], 250), 'Category': np.random.choice(finding_categories, 250, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]), 'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], 250, p=[0.05, 0.35, 0.6]), 'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], 250, p=[0.15, 0.1, 0.7, 0.05]), 'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 900, 250)])}
+    findings_data = {
+        'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)],
+        'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], 250),
+        'Category': np.random.choice(finding_categories, 250, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]),
+        'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], 250, p=[0.05, 0.35, 0.6]),
+        'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], 250, p=[0.15, 0.1, 0.7, 0.05]),
+        'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 900, 250)]),
+        'Is_Proactive': np.random.choice([True, False], 250, p=[0.3, 0.7])
+    }
     findings_df = pd.DataFrame(findings_data).merge(portfolio_df[['Trial_ID', 'Disease_Team', 'Trial_Type', 'PI_Name']], on='Trial_ID', how='left')
     findings_df['CAPA_Plan_Date'] = findings_df.apply(lambda r: r['Finding_Date'] + datetime.timedelta(days=np.random.randint(2, 7)) if r['CAPA_Status'] != 'Open' else pd.NaT, axis=1)
     findings_df['CAPA_Closure_Date'] = findings_df.apply(lambda r: r['CAPA_Plan_Date'] + datetime.timedelta(days=np.random.randint(10, 60)) if r['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
@@ -79,6 +90,7 @@ def generate_master_data():
     portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Screen_Fail_Rate'] *= 1.5
     portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Avg_Accrual_Per_Month'] *= 0.7
     portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Data_Query_Rate'] *= 1.8
+    portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Days_to_Activation'] += 45
 
     auditors = ['Jane Doe, RN', 'John Smith, PhD', 'Maria Garcia, MPH', 'Kevin Lee, CCRC']
     team_data = {
@@ -254,7 +266,9 @@ def plot_auditor_strain_sme(team_df):
 # ======================================================================================
 def render_command_center(portfolio_df, findings_df, team_df):
     st.subheader("Executive Command Center", divider="blue")
-    st.markdown("A strategic overview of the QA program's current status and highest priority items.")
+    st.markdown("A strategic overview of the QA program's current status, efficiency, and highest priority items.")
+
+    st.markdown("##### Program Health & Risk")
     kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
     risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
     open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
@@ -268,26 +282,88 @@ def render_command_center(portfolio_df, findings_df, team_df):
     kpi_col1.metric("Portfolio-wide Risk Score", f"{total_risk_score}", f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals", "inverse")
     kpi_col2.metric("Inspection Readiness Index", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs", "inverse")
     kpi_col3.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", "Target < 2.5", "normal")
-    st.markdown("---")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.markdown("#### 🚨 High-Priority Alerts")
-        overdue_findings = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].sort_values(by='Finding_Date').reset_index()
-        if not overdue_findings.empty:
-            finding = overdue_findings.iloc[0]
-            st.error(f"**Overdue CAPA:** Finding `{finding['Finding_ID']}` on trial `{finding['Trial_ID']}` ({finding['Risk_Level']}) is overdue.", icon="🔥")
-        most_strained = team_df.sort_values(by='Strain', ascending=False).iloc[0]
-        if most_strained['Strain'] > 3.0:
-             st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon="⚠️")
-        criticals_per_trial = findings_df[findings_df['Risk_Level'] == 'Critical'].groupby('Trial_ID').size().sort_values(ascending=False)
-        if not criticals_per_trial.empty:
-            trial_id, count = criticals_per_trial.index[0], criticals_per_trial.iloc[0]
-            st.error(f"**High-Risk Trial:** Trial `{trial_id}` has `{count}` open critical findings.", icon="🔬")
-    with col2:
-        st.markdown("#### Portfolio Status")
-        status_counts = portfolio_df['Status'].value_counts()
-        fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
-        fig.update_traces(textposition='inside', textinfo='percent+label')
+
+    st.markdown("##### Program Velocity & Maturity")
+    kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
+    kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
+
+    open_findings['Age'] = (datetime.datetime.now().date() - open_findings['Finding_Date'].dt.date).dt.days
+    avg_capa_age = open_findings['Age'].mean()
+    kpi_col4.metric("Avg. Open CAPA Age (Days)", f"{avg_capa_age:.1f}", "Target < 30 Days", delta_color="inverse")
+    with st.popover("ⓘ"): st.markdown("**Avg. Open CAPA Age:** The average number of days that all currently open corrective/preventive actions have been active. A rising number indicates a growing backlog or bottlenecks in the resolution process.")
+
+    total_saes = portfolio_df['Total_SAEs'].sum()
+    overdue_saes = portfolio_df['Overdue_SAE_Reports'].sum()
+    overdue_sae_rate = (overdue_saes / total_saes) * 100 if total_saes > 0 else 0
+    kpi_col5.metric("Overdue SAE Reporting", f"{overdue_sae_rate:.2f}%", f"{overdue_saes} Overdue Reports", "inverse")
+    with st.popover("ⓘ"): st.markdown("**Overdue SAE Reporting:** The percentage of all Serious Adverse Events across the portfolio that were not reported within the mandated timeframe. This is a critical patient safety and compliance metric; the target is always 0%.")
+
+    first_pass_rate = 1 - (len(findings_df) / (portfolio_df['Subjects_Enrolled'].sum() * 5))
+    kpi_col6.metric("First Pass Quality Rate", f"{first_pass_rate:.1%}", "Target > 95%", "normal")
+    with st.popover("ⓘ"): st.markdown("**First Pass Quality Rate:** An estimate of the percentage of critical documents that are completed correctly the first time, without requiring a QA finding to correct them. It measures how well quality is 'built-in' to the process.")
+
+    avg_query_rate = portfolio_df['Data_Query_Rate'].mean()
+    data_integrity_score = (1 - avg_query_rate) * 100
+    kpi_col7.metric("Data Integrity Score", f"{data_integrity_score:.1f}%", f"{avg_query_rate:.2f} Queries/Subject", "normal")
+    with st.popover("ⓘ"): st.markdown("**Data Integrity Score:** A proxy for data cleanliness, calculated as (1 - Average Data Query Rate). A lower query rate indicates cleaner source data, reducing the burden on data management and monitoring teams.")
+
+    proactive_audits = findings_df['Is_Proactive'].sum()
+    total_audits = len(findings_df)
+    proactive_ratio = (proactive_audits / total_audits) * 100 if total_audits > 0 else 0
+    kpi_col8.metric("Proactive Audit Ratio", f"{proactive_ratio:.1f}%", f"{proactive_audits} Proactive Audits", "normal")
+    with st.popover("ⓘ"): st.markdown("**Proactive Audit Ratio:** The percentage of findings that originate from proactive (risk-based, for-cause) audits versus routine, scheduled audits. A higher ratio indicates a more mature, risk-focused QA program.")
+    
+    current_certs = len(team_df[team_df['GCP_Certification_Status'] == 'Current'])
+    total_auditors = len(team_df)
+    team_readiness = (current_certs / total_auditors) * 100 if total_auditors > 0 else 0
+    expiring_soon = total_auditors - current_certs
+    kpi_col9.metric("Team Readiness (GCP Certified)", f"{team_readiness:.0f}%", f"{expiring_soon} Expiring Soon", "off")
+    with st.popover("ⓘ"): st.markdown("**Team Readiness:** The percentage of the QA audit/monitoring team whose mandatory certifications (like GCP) are current and not expiring within 90 days. This is a leading indicator of internal compliance and team preparedness.")
+        
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+    plot_tabs = st.tabs(["🔥 Priority Alerts", "📊 Finding Backlog", "🧑‍🔬 Auditor Skills", "🗺️ Risk Treemap"])
+    with plot_tabs[0]:
+        st.markdown("##### High-Priority Alerts & Portfolio Status")
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            overdue_findings = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].sort_values(by='Finding_Date').reset_index()
+            if not overdue_findings.empty: st.error(f"**Overdue CAPA:** Finding `{overdue_findings.iloc[0]['Finding_ID']}` on trial `{overdue_findings.iloc[0]['Trial_ID']}` ({overdue_findings.iloc[0]['Risk_Level']}) is overdue.", icon="🔥")
+            most_strained = team_df.sort_values(by='Strain', ascending=False).iloc[0]
+            if most_strained['Strain'] > 3.0: st.warning(f"**Resource At Risk:** `{most_strained['Auditor']}` has a high Strain Index of `{most_strained['Strain']:.2f}`.", icon="⚠️")
+            criticals_per_trial = findings_df[findings_df['Risk_Level'] == 'Critical'].groupby('Trial_ID').size().sort_values(ascending=False)
+            if not criticals_per_trial.empty: st.error(f"**High-Risk Trial:** Trial `{criticals_per_trial.index[0]}` has `{criticals_per_trial.iloc[0]}` open critical findings.", icon="🔬")
+        with col2:
+            status_counts = portfolio_df['Status'].value_counts()
+            fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
+            st.plotly_chart(fig, use_container_width=True)
+    with plot_tabs[1]:
+        st.markdown("##### Findings Funnel: Opened vs. Closed Over Time")
+        st.info("💡 **Expert Tip:** Watch the gap between the blue (Opened) and red (Closed) areas. If the gap is widening, your team's backlog is growing, and you may need to re-prioritize or allocate more resources to CAPA management.", icon="❓")
+        opened_by_month = findings_df.set_index('Finding_Date').resample('ME').size().reset_index(name='Opened')
+        closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date']).set_index('CAPA_Closure_Date').resample('ME').size().reset_index(name='Closed')
+        funnel_df = pd.merge(opened_by_month, closed_by_month, left_on='Finding_Date', right_on='CAPA_Closure_Date', how='outer').fillna(0)
+        funnel_df['Date'] = funnel_df['Finding_Date'].combine_first(funnel_df['CAPA_Closure_Date'])
+        funnel_df = funnel_df.sort_values('Date')
+        funnel_df['Cumulative_Opened'] = funnel_df['Opened'].cumsum()
+        funnel_df['Cumulative_Closed'] = funnel_df['Closed'].cumsum()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Opened'], fill='tozeroy', mode='lines', name='Total Findings Opened', line_color='#005A9C'))
+        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Closed'], fill='tozeroy', mode='lines', name='Total Findings Closed', line_color='#E63946'))
+        fig.update_layout(title="<b>Cumulative Findings Funnel</b>", yaxis_title="Count of Findings")
+        st.plotly_chart(fig, use_container_width=True)
+    with plot_tabs[2]:
+        st.markdown("##### Auditor Skill Matrix")
+        st.info("💡 **Expert Tip:** Use this matrix for strategic audit assignment. Assign auditors with high skill levels (darker blue) to the most complex and high-risk trials within a given disease area to maximize effectiveness.", icon="❓")
+        fig = px.imshow(team_df.set_index('Auditor')[['IIT_Oversight_Skill', 'FDA_Inspection_Mgmt_Skill']], text_auto=True, aspect="auto", title="<b>Auditor Skill Level Matrix (1-5 Scale)</b>", labels=dict(x="Specialized Skill", y="Auditor", color="Skill Level"), color_continuous_scale='Blues')
+        st.plotly_chart(fig, use_container_width=True)
+    with plot_tabs[3]:
+        st.markdown("##### Portfolio Risk Treemap")
+        st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
+        risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
+        risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
+        fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
+        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
         st.plotly_chart(fig, use_container_width=True)
 
 def render_predictive_analytics(findings_df, portfolio_df):
@@ -342,60 +418,45 @@ def render_predictive_analytics(findings_df, portfolio_df):
 def render_systemic_risk(findings_df, portfolio_df):
     st.subheader("Systemic Process & Risk Analysis", divider="blue")
     st.markdown("_This section moves beyond individual data points to identify systemic trends, process vulnerabilities, and non-random patterns across the clinical trial portfolio._")
+    
     col1, col2 = st.columns(2)
     with col1:
         with st.container(border=True):
-            st.markdown("##### Statistical Process Control (SPC) Analysis")
-            st.info("💡 **Expert Tip:** Any red 'X' points outside the shaded blue area represent 'special cause' variations that require immediate Root Cause Analysis.", icon="❓")
-            category_to_monitor = st.selectbox("Select Finding Category to Analyze for Trends:", options=findings_df['Category'].unique())
-            st.plotly_chart(plot_spc_chart_sme(findings_df, 'Finding_Date', 'Category', category_to_monitor, f"SPC for '{category_to_monitor}'"), use_container_width=True)
+            st.markdown("##### Finding Lifecycle Analysis")
+            st.info("💡 **Expert Tip:** Analyze the distributions. A wide spread in 'Time to Closure' for a specific category suggests inconsistent processes for fixing those types of problems across teams.", icon="❓")
+            findings_df['Time_to_Plan_Days'] = (findings_df['CAPA_Plan_Date'] - findings_df['Finding_Date']).dt.days
+            findings_df['Time_to_Close_Days'] = (findings_df['CAPA_Closure_Date'] - findings_df['CAPA_Plan_Date']).dt.days
+            lifecycle_df = findings_df[['Category', 'Time_to_Plan_Days', 'Time_to_Close_Days']].melt(id_vars=['Category'], var_name='Lifecycle_Stage', value_name='Days').dropna()
+            fig = px.box(lifecycle_df, x='Category', y='Days', color='Lifecycle_Stage', title="<b>Finding Lifecycle Duration by Category</b>", labels={'Days': "Duration (Days)", "Category": "Finding Category"}, color_discrete_map={'Time_to_Plan_Days': '#FFC72C', 'Time_to_Close_Days': '#005A9C'})
+            st.plotly_chart(fig, use_container_width=True)
+            
     with col2:
         with st.container(border=True):
-            st.markdown("##### Finding Concentration Analysis")
-            st.info("💡 **Expert Tip:** Dark blue 'hotspots' suggest a targeted training intervention for that specific team is more effective than a CTO-wide initiative.", icon="❓")
-            st.plotly_chart(px.imshow(pd.crosstab(findings_df['Disease_Team'], findings_df['Category']), text_auto=True, aspect="auto", title="<b>Finding Concentration by Disease Team & Category</b>", color_continuous_scale='Blues'), use_container_width=True)
-    
-    with st.container(border=True):
-        st.markdown("##### CAPA Effectiveness & Finding Recurrence Analysis")
-        st.info("💡 **Expert Tip:** This chart is critical for a mature QMS. A high recurrence rate in a specific category indicates that our Corrective and Preventive Actions are not addressing the root cause and need to be re-evaluated.", icon="❓")
-        capa_effectiveness_df = analyze_capa_effectiveness(findings_df)
-        if not capa_effectiveness_df.empty:
-            fig = px.bar(capa_effectiveness_df, x='Recurrence_Rate', y='Category', orientation='h', title='<b>Finding Recurrence Rate by Category (Post-CAPA)</b>', labels={'Recurrence_Rate': 'Recurrence Rate (%)', 'Category': 'Finding Category'}, text=capa_effectiveness_df['Recurrence_Rate'].apply(lambda x: f'{x:.0%}'))
-            fig.update_traces(marker_color='#E63946', textposition='outside')
-            fig.update_layout(plot_bgcolor='white', xaxis_tickformat='.0%', yaxis={'categoryorder':'total ascending'})
+            st.markdown("##### Principal Investigator (PI) Risk Outlier Detection")
+            st.info("💡 **Expert Tip:** Focus on PIs with a Z-Score greater than 2.0. These are statistical outliers whose portfolios carry a disproportionate amount of risk and may warrant a comprehensive portfolio review.", icon="❓")
+            risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
+            findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
+            pi_risk = findings_df.groupby('PI_Name')['Risk_Score'].sum().reset_index()
+            pi_risk['Z_Score'] = (pi_risk['Risk_Score'] - pi_risk['Risk_Score'].mean()) / pi_risk['Risk_Score'].std()
+            pi_risk['Outlier'] = pi_risk['Z_Score'] > 2.0
+            pi_risk = pi_risk.sort_values('Z_Score', ascending=False)
+            fig = px.bar(pi_risk.head(15), x='PI_Name', y='Z_Score', color='Outlier', title="<b>Top 15 PIs by Portfolio Risk Z-Score</b>", labels={'PI_Name': "Principal Investigator", 'Z_Score': "Risk Z-Score (Std. Deviations from Mean)"}, color_discrete_map={True: '#E63946', False: '#005A9C'})
+            fig.update_layout(xaxis={'categoryorder':'total descending'})
             st.plotly_chart(fig, use_container_width=True)
-        else: st.write("No closed CAPAs available to analyze for effectiveness.")
 
     with st.container(border=True):
-        st.markdown("##### Interactive Regulatory Inspection Simulation")
-        st.info("💡 **Expert Tip:** Use this tool to pressure-test readiness and train staff. Can the requested document be produced instantly? This simulates the high-stakes reality of an FDA or EMA audit.", icon="❓")
-        @st.cache_data
-        def create_mock_etmf(_portfolio_df):
-            mock_etmf = {}
-            for _, row in _portfolio_df.iterrows():
-                trial_id, num_subjects = row['Trial_ID'], row['Subjects_Enrolled']
-                mock_etmf[trial_id] = {"Protocol Signature Page": f"DocRef_PSP_{trial_id}.pdf", "IRB Approval Letter": f"DocRef_IRB_Approval_{trial_id}.pdf", "FDA Form 1572": f"DocRef_1572_{trial_id}.pdf" if "IIT" in trial_id or "IND" in trial_id else "N/A", "Informed Consent Forms": {f"Subject-{i:03d}": f"ICF_{trial_id}_Subj_{i:03d}.pdf" for i in range(1, num_subjects + 1)}, "Serious Adverse Event Reports": {f"SAE-{i:03d}": f"SAE_{trial_id}_{i:03d}.pdf" for i in range(1, np.random.randint(2, 6))}}
-            return mock_etmf
-        mock_etmf_db = create_mock_etmf(portfolio_df)
-        sim_col1, sim_col2 = st.columns([1, 2])
-        with sim_col1:
-            st.write("**Inspection Scenario:**")
-            trial_to_inspect = st.selectbox("Select a Trial to Inspect:", options=portfolio_df['Trial_ID'], key="inspect_trial")
-            subject_list = list(mock_etmf_db[trial_to_inspect]["Informed Consent Forms"].keys())
-            if subject_list: subject_to_inspect = st.selectbox("Select a Subject:", options=subject_list, key="inspect_subject")
-            else: subject_to_inspect = None
-        if subject_to_inspect and st.button("🔬 Pull Subject's Consent Form"):
-            with sim_col2:
-                st.info(f"Request: 'Please provide the signed consent form for {subject_to_inspect} on trial {trial_to_inspect}.'")
-                with st.spinner("Searching eTMF..."): time.sleep(1.5)
-                st.success("**Document Found!**"); st.code(f"File Path: /eTMF/Trials/{trial_to_inspect}/Subject_Files/{subject_to_inspect}/ICF_{trial_to_inspect}_Subj_{subject_to_inspect.split('-')[1]}.pdf\nAccessed: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", language="bash")
-        if st.button("📄 Pull Trial's 1572 Form"):
-            with sim_col2:
-                st.info(f"Request: 'Please provide the current FDA Form 1572 for trial {trial_to_inspect}.'")
-                with st.spinner("Searching eTMF..."): time.sleep(1)
-                doc_ref = mock_etmf_db[trial_to_inspect].get("FDA Form 1572")
-                if doc_ref != "N/A": st.success("**Document Found!**"); st.code(f"File Path: /eTMF/Trials/{trial_to_inspect}/Regulatory/{doc_ref}\nAccessed: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", language="bash")
-                else: st.error("**Document Not Applicable!** This is not an IND-holding trial.")
+        st.markdown("##### Audit Prioritization Matrix")
+        st.info("💡 **Expert Tip:** Trials in the top-right quadrant (High Risk & Overdue for Audit) are your highest priority. Use this matrix to build your quarterly audit schedule and justify resource allocation.", icon="❓")
+        risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
+        findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
+        trial_risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
+        audit_priority_df = pd.merge(portfolio_df, trial_risk_summary, on='Trial_ID', how='left').fillna(0)
+        audit_priority_df['Days_Since_Audit'] = (datetime.datetime.now().date() - audit_priority_df['Last_Audit_Date'].dt.date).dt.days
+        fig = px.scatter(audit_priority_df, x='Days_Since_Audit', y='Risk_Score', size='Subjects_Enrolled', color='Disease_Team', hover_name='Trial_ID', title="<b>Audit Prioritization Matrix</b>", labels={'Days_Since_Audit': 'Days Since Last Audit', 'Risk_Score': "Total Aggregated Risk Score"})
+        fig.add_hline(y=audit_priority_df['Risk_Score'].mean(), line_dash="dot")
+        fig.add_vline(x=365, line_dash="dot")
+        fig.add_annotation(x=500, y=audit_priority_df['Risk_Score'].mean()*1.5, text="<b>Highest Priority</b>", showarrow=False, font=dict(color="firebrick"))
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_pi_performance(portfolio_df, findings_df):
     st.subheader("Principal Investigator (PI) Performance Oversight", divider="blue")
@@ -450,13 +511,65 @@ def render_organizational_capability(team_df, initiatives_df):
 def render_quality_impact(portfolio_df, findings_df):
     st.subheader("Quality Impact on Trial Performance", divider="blue")
     st.markdown("_This analysis correlates quality metrics with key trial operational metrics to demonstrate the tangible impact of quality on research success._")
-    with st.container(border=True):
+
+    major_findings_count = findings_df[findings_df['Risk_Level'].isin(['Major', 'Critical'])].groupby('Trial_ID').size().reset_index(name='Major_Finding_Count')
+    plot_df = pd.merge(portfolio_df, major_findings_count, on='Trial_ID', how='left').fillna(0)
+    
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Accrual vs. Findings", "📉 Screen Failures", "💻 Data Quality", "⏳ Startup Delays", "🧑‍🏫 PI Experience", " tổng hợp The Big Picture"])
+    with tab1:
         st.markdown("##### Correlation: Major Findings vs. Patient Accrual")
         st.info("💡 **Expert Tip:** Use this chart to demonstrate to Disease Team Leaders and PIs how quality issues can directly impact trial performance and enrollment goals. Trials with fewer major findings (left side) tend to have higher monthly accrual.", icon="❓")
-        major_findings_count = findings_df[findings_df['Risk_Level'].isin(['Major', 'Critical'])].groupby('Trial_ID').size().reset_index(name='Major_Finding_Count')
-        plot_df = pd.merge(portfolio_df, major_findings_count, on='Trial_ID', how='left').fillna(0)
         fig = px.scatter(plot_df, x='Major_Finding_Count', y='Avg_Accrual_Per_Month', size='Subjects_Enrolled', color='Disease_Team', hover_name='Trial_ID', title='<b>Higher Quality Correlates with Faster Patient Accrual</b>', labels={'Major_Finding_Count': 'Number of Critical/Major Findings', 'Avg_Accrual_Per_Month': 'Average Accrual per Month'}, size_max=40)
         fig.update_layout(plot_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True)
+    with tab2:
+        st.markdown("##### Impact of Consent & Eligibility Findings on Screen Failures")
+        st.info("💡 **Expert Tip:** This plot provides direct evidence that poor upfront quality control in consent and eligibility leads to wasted resources (higher screen fail rates). Use this to justify investment in better pre-screening and consent monitoring processes.", icon="❓")
+        eligibility_findings = findings_df[findings_df['Category'].isin(['Informed Consent Process', 'Protocol Adherence'])].groupby('Trial_ID').size().reset_index(name='Eligibility_Finding_Count')
+        plot_df_sfr = pd.merge(portfolio_df, eligibility_findings, on='Trial_ID', how='left').fillna(0)
+        fig = px.scatter(plot_df_sfr, x='Eligibility_Finding_Count', y='Screen_Fail_Rate', color='Phase', size='Subjects_Enrolled', hover_name='Trial_ID', title='<b>More Eligibility-Related Findings Correlate with Higher Screen Fail Rates</b>', labels={'Eligibility_Finding_Count': 'Consent & Eligibility Findings', 'Screen_Fail_Rate': 'Screen Failure Rate'})
+        fig.update_layout(plot_bgcolor='white', yaxis_tickformat=".0%")
+        st.plotly_chart(fig, use_container_width=True)
+    with tab3:
+        st.markdown("##### Impact of Source Data Findings on Data Query Rate")
+        st.info("💡 **Expert Tip:** This chart links QA oversight directly to data management efficiency. Show this to data management leaders to build a partnership around improving source data quality, which reduces their workload and accelerates time to database lock.", icon="❓")
+        sdv_findings = findings_df[findings_df['Category'] == 'Source Data Verification'].groupby('Trial_ID').size().reset_index(name='SDV_Finding_Count')
+        plot_df_query = pd.merge(portfolio_df, sdv_findings, on='Trial_ID', how='left').fillna(0)
+        fig = px.scatter(plot_df_query, x='SDV_Finding_Count', y='Data_Query_Rate', color='Trial_Type', size='Subjects_Enrolled', hover_name='Trial_ID', title='<b>More Source Data Findings Correlate with Higher Data Query Rates</b>', labels={'SDV_Finding_Count': 'Number of Source Data Verification Findings', 'Data_Query_Rate': 'Data Queries per Subject'})
+        fig.update_layout(plot_bgcolor='white', yaxis_tickformat=".1%")
+        st.plotly_chart(fig, use_container_width=True)
+    with tab4:
+        st.markdown("##### Impact of Regulatory Findings on Trial Startup Times")
+        st.info("💡 **Expert Tip:** This chart demonstrates that early, robust quality checks in the startup phase can reduce activation delays. Use this to advocate for QA involvement *before* a trial is activated, not just after.", icon="❓")
+        startup_findings = findings_df[findings_df['Category'] == 'Regulatory Binder Mgmt'].groupby('Trial_ID').size().reset_index(name='Startup_Finding_Count')
+        plot_df_startup = pd.merge(portfolio_df, startup_findings, on='Trial_ID', how='left').fillna(0)
+        fig = px.scatter(plot_df_startup, x='Startup_Finding_Count', y='Days_to_Activation', color='PI_Experience_Level', hover_name='Trial_ID', title='<b>More Regulatory Findings Correlate with Longer Startup Times</b>', labels={'Startup_Finding_Count': 'Number of Startup-Phase Findings', 'Days_to_Activation': 'Days from IRB Submission to Activation'})
+        fig.update_layout(plot_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True)
+    with tab5:
+        st.markdown("##### PI Experience vs. Quality & Performance")
+        st.info("💡 **Expert Tip:** This provides objective evidence for the 'New Investigator Program.' It shows that while new PIs have more quality findings, they can still achieve high accrual. This justifies providing them with enhanced, targeted QA support to mitigate risk without stifling their research.", icon="❓")
+        fig = px.scatter(plot_df, x='Avg_Accrual_Per_Month', y='Major_Finding_Count', color='PI_Experience_Level', size='Subjects_Enrolled', title='<b>Relationship Between PI Experience, Quality, and Accrual</b>', labels={'Avg_Accrual_Per_Month': 'Average Accrual per Month', 'Major_Finding_Count': 'Number of Major/Critical Findings'}, color_discrete_map={'New': '#E63946', 'Intermediate': '#FFC72C', 'Expert': '#005A9C'})
+        fig.update_layout(plot_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True)
+    with tab6:
+        st.markdown("##### The Big Picture: Cost of Poor Quality")
+        st.info("💡 **Expert Tip:** This is your executive summary. It aggregates the data to make a powerful business case for investing in quality. It clearly shows that higher-risk trials (as defined by our predictive model) are slower, less efficient, and costlier across the board.", icon="❓")
+        risk_model, encoder, model_features, _ = get_risk_model_with_importance(portfolio_df)
+        X_all_cat = plot_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]
+        X_all_num = plot_df[['Is_First_In_Human', 'Num_Sites']]
+        X_all_encoded = pd.DataFrame(encoder.transform(X_all_cat), columns=encoder.get_feature_names_out(X_all_cat.columns))
+        X_all_final = pd.concat([X_all_num.reset_index(drop=True), X_all_encoded], axis=1).reindex(columns=model_features, fill_value=0)
+        plot_df['Predicted_Risk'] = risk_model.predict_proba(X_all_final)[:, 1]
+        plot_df['Risk_Tier'] = pd.cut(plot_df['Predicted_Risk'], bins=[0, 0.4, 0.6, 1.0], labels=['Low Risk', 'Medium Risk', 'High Risk'], right=False)
+        impact_summary = plot_df.groupby('Risk_Tier')[['Avg_Accrual_Per_Month', 'Screen_Fail_Rate', 'Data_Query_Rate']].mean().reset_index()
+        fig = go.Figure(data=[
+            go.Bar(name='Avg Accrual/Month', x=impact_summary['Risk_Tier'], y=impact_summary['Avg_Accrual_Per_Month'], yaxis='y', offsetgroup=1),
+            go.Bar(name='Screen Fail Rate', x=impact_summary['Risk_Tier'], y=impact_summary['Screen_Fail_Rate'], yaxis='y2', offsetgroup=2),
+            go.Bar(name='Data Query Rate', x=impact_summary['Risk_Tier'], y=impact_summary['Data_Query_Rate'], yaxis='y2', offsetgroup=2, base=impact_summary['Screen_Fail_Rate'])
+        ],
+        layout={'yaxis': {'title': 'Avg Accrual per Month'}, 'yaxis2': {'title': 'Rate (%)', 'overlaying': 'y', 'side': 'right', 'tickformat': '.0%'}, 'title': '<b>The Operational Cost of Poor Quality by Predicted Risk Tier</b>'})
+        fig.update_layout(barmode='group')
         st.plotly_chart(fig, use_container_width=True)
 
 # ======================================================================================
