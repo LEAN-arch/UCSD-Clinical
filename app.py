@@ -633,7 +633,7 @@ def main():
         
         # ========= BUG FIX IS HERE =========
         # The generate_master_data function now returns 5 items. The unpacking must match.
-        portfolio_df_sidebar, findings_df_sidebar, team_df_sidebar, _, _ = generate_master_data()
+        portfolio_df_sidebar, findings_df_sidebar, team_df_sidebar, _ = generate_master_data()
         # ========= END OF BUG FIX =========
 
         risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
