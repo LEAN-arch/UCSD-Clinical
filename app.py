@@ -653,22 +653,34 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             fig = px.bar(compliance_df, x='Status', y='Count', text='Count', color='Status', title="<b>Team GCP Certification Compliance Status</b>", color_discrete_map={'Current': 'green', 'Expires <90d': 'orange', 'Expired': 'red'})
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
-with main_tabs[1]:
+    
+    # <--- FIX: This entire block was de-indented. It is now correctly indented.
+    with main_tabs[1]:
         st.markdown("##### Strategic Initiatives & Financial Oversight")
         st.info("💡 **Expert Tip:** A CPI or SPI value < 1.0 indicates a project is over budget or behind schedule, respectively. This allows for proactive intervention before projects go significantly off-track.", icon="❓")
+        
         # FIX: Ensure 'today' is timezone-naive to match the naive Start_Date
         today = pd.to_datetime(datetime.datetime.now()) # Use datetime.now() instead of date.today()
         initiatives_df['Start_Date'] = pd.to_datetime(initiatives_df['Start_Date'])
         initiatives_df['End_Date'] = pd.to_datetime(initiatives_df['End_Date'])
+        
         initiatives_df['Days_Elapsed'] = (today - initiatives_df['Start_Date']).dt.days
         initiatives_df['Total_Days_Planned'] = (initiatives_df['End_Date'] - initiatives_df['Start_Date']).dt.days
         initiatives_df['Daily_Burn_Rate'] = initiatives_df.apply(lambda row: row['Spent_USD'] / row['Days_Elapsed'] if row['Days_Elapsed'] > 0 else 0, axis=1)
         initiatives_df['Projected_Total_Cost'] = initiatives_df['Daily_Burn_Rate'] * initiatives_df['Total_Days_Planned']
         initiatives_df['Projected_Over_Under'] = initiatives_df['Budget_USD'] - initiatives_df['Projected_Total_Cost']
-        initiatives_df['CPI'] = initiatives_df.apply(lambda row: (row['Budget_USD'] * row['Percent_Complete']/100) / row['Spent_USD'] if row['Spent_USD'] > 0 else 0, axis=1)
+        initiatives_df['CPI'] = initiatives_df.apply(lambda row: (row['Budget_USD'] * (row['Percent_Complete']/100)) / row['Spent_USD'] if row['Spent_USD'] > 0 else 0, axis=1)
         initiatives_df['SPI'] = initiatives_df.apply(lambda row: (row['Percent_Complete']/100) / (row['Days_Elapsed']/row['Total_Days_Planned']) if row['Days_Elapsed'] > 0 and row['Total_Days_Planned'] > 0 else 0, axis=1)
+        
         def format_financials(df):
-            return df.style.format({'Budget_USD': "${:,.0f}", 'Spent_USD': "${:,.0f}", 'Projected_Total_Cost': "${:,.0f}", 'Projected_Over_Under': "${:,.0f}", 'Daily_Burn_Rate': "${:,.2f}", 'CPI': "{:.2f}", 'SPI': "{:.2f}"}).background_gradient(cmap='RdYlGn', subset=['Projected_Over_Under']).background_gradient(cmap='RdYlGn', vmin=0.8, vmax=1.2, subset=['CPI', 'SPI']).bar(subset=['Percent_Complete'], color='#5cadff', vmin=0, vmax=100)
+            return df.style.format({
+                'Budget_USD': "${:,.0f}", 'Spent_USD': "${:,.0f}", 
+                'Projected_Total_Cost': "${:,.0f}", 'Projected_Over_Under': "${:,.0f}", 
+                'Daily_Burn_Rate': "${:,.2f}", 'CPI': "{:.2f}", 'SPI': "{:.2f}"
+            }).background_gradient(cmap='RdYlGn', subset=['Projected_Over_Under']
+            ).background_gradient(cmap='RdYlGn', vmin=0.8, vmax=1.2, subset=['CPI', 'SPI']
+            ).bar(subset=['Percent_Complete'], color='#5cadff', vmin=0, vmax=100)
+            
         st.dataframe(format_financials(initiatives_df[['Initiative', 'Lead', 'Status', 'Percent_Complete', 'Budget_USD', 'Spent_USD', 'Projected_Total_Cost', 'Projected_Over_Under', 'CPI', 'SPI']]), use_container_width=True)
         st.caption("CPI (Cost Performance Index) & SPI (Schedule Performance Index): > 1.0 is favorable (green), < 1.0 is unfavorable (red).")
 
