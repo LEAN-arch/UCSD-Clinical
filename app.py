@@ -346,29 +346,29 @@ def render_command_center(portfolio_df, findings_df, team_df):
             status_counts = portfolio_df['Status'].value_counts()
             fig = px.pie(status_counts, values=status_counts.values, names=status_counts.index, title='Active Clinical Trial Portfolio', hole=0.4, color_discrete_map={'Enrolling':'#005A9C', 'Follow-up':'#3EC1D3', 'Closed to Accrual':'#FFC72C', 'Suspended':'#E63946'})
             st.plotly_chart(fig, use_container_width=True)
-with plot_tabs[1]:
-        st.markdown("##### Findings Funnel: Opened vs. Closed Over Time")
-        st.info("💡 **Expert Tip:** Watch the gap between the blue (Opened) and red (Closed) areas. If the gap is widening, your team's backlog is growing, and you may need to re-prioritize or allocate more resources to CAPA management.", icon="❓")
-        opened_by_month = findings_df.set_index('Finding_Date').resample('ME').size().reset_index(name='Opened')
-        closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date']).set_index('CAPA_Closure_Date').resample('ME').size().reset_index(name='Closed')
-        
-        # Merge the dataframes
-        funnel_df = pd.merge(opened_by_month, closed_by_month, left_on='Finding_Date', right_on='CAPA_Closure_Date', how='outer')
-        
-        # Fill NA only in the numeric 'Opened' and 'Closed' columns
-        funnel_df[['Opened', 'Closed']] = funnel_df[['Opened', 'Closed']].fillna(0)
-        
-        # Now, create the unified 'Date' column and sort
-        funnel_df['Date'] = funnel_df['Finding_Date'].combine_first(funnel_df['CAPA_Closure_Date'])
-        funnel_df = funnel_df.sort_values('Date')
-        
-        funnel_df['Cumulative_Opened'] = funnel_df['Opened'].cumsum()
-        funnel_df['Cumulative_Closed'] = funnel_df['Closed'].cumsum()
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Opened'], fill='tozeroy', mode='lines', name='Total Findings Opened', line_color='#005A9C'))
-        fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Closed'], fill='tozeroy', mode='lines', name='Total Findings Closed', line_color='#E63946'))
-        fig.update_layout(title="<b>Cumulative Findings Funnel</b>", yaxis_title="Count of Findings")
-        st.plotly_chart(fig, use_container_width=True)
+    with plot_tabs[1]:
+            st.markdown("##### Findings Funnel: Opened vs. Closed Over Time")
+            st.info("💡 **Expert Tip:** Watch the gap between the blue (Opened) and red (Closed) areas. If the gap is widening, your team's backlog is growing, and you may need to re-prioritize or allocate more resources to CAPA management.", icon="❓")
+            opened_by_month = findings_df.set_index('Finding_Date').resample('ME').size().reset_index(name='Opened')
+            closed_by_month = findings_df.dropna(subset=['CAPA_Closure_Date']).set_index('CAPA_Closure_Date').resample('ME').size().reset_index(name='Closed')
+            
+            # Merge the dataframes
+            funnel_df = pd.merge(opened_by_month, closed_by_month, left_on='Finding_Date', right_on='CAPA_Closure_Date', how='outer')
+            
+            # Fill NA only in the numeric 'Opened' and 'Closed' columns
+            funnel_df[['Opened', 'Closed']] = funnel_df[['Opened', 'Closed']].fillna(0)
+            
+            # Now, create the unified 'Date' column and sort
+            funnel_df['Date'] = funnel_df['Finding_Date'].combine_first(funnel_df['CAPA_Closure_Date'])
+            funnel_df = funnel_df.sort_values('Date')
+            
+            funnel_df['Cumulative_Opened'] = funnel_df['Opened'].cumsum()
+            funnel_df['Cumulative_Closed'] = funnel_df['Closed'].cumsum()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Opened'], fill='tozeroy', mode='lines', name='Total Findings Opened', line_color='#005A9C'))
+            fig.add_trace(go.Scatter(x=funnel_df['Date'], y=funnel_df['Cumulative_Closed'], fill='tozeroy', mode='lines', name='Total Findings Closed', line_color='#E63946'))
+            fig.update_layout(title="<b>Cumulative Findings Funnel</b>", yaxis_title="Count of Findings")
+            st.plotly_chart(fig, use_container_width=True)
     with plot_tabs[2]:
         st.markdown("##### Auditor Skill Matrix")
         st.info("💡 **Expert Tip:** Use this matrix for strategic audit assignment. Assign auditors with high skill levels (darker blue) to the most complex and high-risk trials within a given disease area to maximize effectiveness.", icon="❓")
