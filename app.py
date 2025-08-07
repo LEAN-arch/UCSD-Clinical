@@ -734,7 +734,6 @@ with plot_tabs[0]:
             
             skill_cols = [col for col in filtered_team_df.columns if '_Skill' in col]
             if not filtered_team_df.empty:
-                # FIX: Use .loc for all new column assignments to prevent SettingWithCopyWarning
                 filtered_team_df.loc[:, 'Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
                 
                 if 'Strain' not in filtered_team_df.columns:
@@ -811,47 +810,8 @@ with plot_tabs[0]:
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("No audit data available for the selected filter.")
-
-        with plot_tabs[1]:
-            st.markdown("###### Historical Workload vs. Efficiency Trends")
-            st.info("💡 **Expert Tip:** Watch for divergence. If the blue workload line rises while the red efficiency line also rises (gets worse), it's a strong indicator of impending team burnout or process bottlenecks.", icon="❓")
-            
-            if not filtered_audit_yield_df.empty:
-                trend_df = filtered_audit_yield_df.copy()
-                trend_df['Quarter'] = pd.to_datetime(trend_df['Audit_Date']).dt.to_period('Q').astype(str)
-                
-                quarterly_summary = trend_df.groupby('Quarter').agg(
-                    Avg_Turnaround=('Turnaround_Time', 'mean'),
-                    Total_Audits=('Audit_ID', 'count')
-                ).reset_index()
-
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=quarterly_summary['Quarter'],
-                    y=quarterly_summary['Total_Audits'],
-                    name='Audits Conducted',
-                    marker_color='#A8DADC'
-                ))
-                fig.add_trace(go.Scatter(
-                    x=quarterly_summary['Quarter'],
-                    y=quarterly_summary['Avg_Turnaround'],
-                    name='Avg. Turnaround (Days)',
-                    yaxis='y2',
-                    mode='lines+markers',
-                    line=dict(color='#E63946', width=3)
-                ))
-                
-                fig.update_layout(
-                    title_text="<b>Quarterly Workload vs. Report Turnaround Efficiency</b>",
-                    yaxis=dict(title='Total Audits Conducted'),
-                    yaxis2=dict(title='Avg. Turnaround (Days)', overlaying='y', side='right', showgrid=False, autorange="reversed"),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    plot_bgcolor='white'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("No audit data available for the selected filter.")
-
+        
+        # DUPLICATE BLOCK WAS REMOVED FROM HERE
 
         with plot_tabs[2]:
             st.markdown("###### Comparative Audit Yield Analysis")
@@ -885,7 +845,6 @@ with plot_tabs[0]:
             else:
                 st.warning("No finding data available for the selected filter.")
 
-            
         with plot_tabs[3]:
             st.markdown("###### QA Team Compliance & Readiness")
             st.info("💡 **Expert Tip:** This provides an immediate view of departmental compliance risk. An expired certification is a direct liability during an inspection of the QA unit itself.", icon="❓")
