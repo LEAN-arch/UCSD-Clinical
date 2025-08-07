@@ -29,16 +29,8 @@ PI Performance Oversight: Provides granular performance metrics for individual P
 Team & Strategy:
 Auditor Workload Analysis: A quadrant analysis plot that visualizes auditor workload vs. efficiency to identify team members who are overworked, underutilized, or are candidates for mentorship.
 Strategic Initiatives Dashboard: Tracks the progress and financial health of key QA projects using Earned Value Management metrics like CPI (Cost Performance Index) and SPI (Schedule Performance Index).
-Quality Impact: Correlates quality metrics (e.g., number of major findings) with operational outcomes (e.g., patient accrual rates) to demonstrate the tangible link between high-quality conduct and trial success.
+Quality Impact: Correlates quality metrics with operational outcomes to demonstrate the tangible link between high-quality conduct and trial success.
 PowerPoint Report Generation: Allows users to download a pre-formatted executive summary of the current QA status as a .pptx file for leadership briefings.
-Technical Stack
-Framework: Streamlit
-Data Manipulation: Pandas, NumPy
-Data Visualization: Plotly
-Machine Learning: Scikit-learn
-PowerPoint Generation: python-pptx
-UI Components: streamlit-option-menu
-Installation and Setup
 
 Key Concepts
 This dashboard is built around several key concepts from modern Quality Management Systems (QMS) and project management:
@@ -47,6 +39,3 @@ SPC (Statistical Process Control): A method for monitoring, controlling, and imp
 CAPA (Corrective and Preventive Action): A systematic process for investigating and correcting discrepancies (findings) to prevent their recurrence.
 CPI/SPI (Cost/Schedule Performance Index): Metrics from Earned Value Management used to assess the financial and timeline health of a project. A value > 1.0 is favorable.
 GCP (Good Clinical Practice): An international ethical and scientific quality standard for designing, conducting, recording, and reporting trials that involve human subjects.
-Prerequisites
-Python 3.9+
-pip package manager
