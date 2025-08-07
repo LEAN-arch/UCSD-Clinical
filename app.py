@@ -325,34 +325,48 @@ def render_command_center(portfolio_df, findings_df, team_df):
     st.subheader("Executive Command Center", divider="blue")
     st.markdown("A strategic overview of the QA program's current status, efficiency, and highest priority items.")
 
-    # --- Program Health & Risk ---
+    risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
+    findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
+    open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
+
+    # --- Program Health & Risk (Now uses the consistent kpi-box style) ---
     st.markdown("##### Program Health & Risk")
     kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-    risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
-    
-    # CORRECTED: Calculate Risk_Score on the main dataframe first
-    findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
-    
-    open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
+
+    # KPI 1: Portfolio-wide Risk Score
     total_risk_score = int(open_findings['Risk_Score'].sum())
+    with kpi_col1:
+        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        st.metric("Portfolio-wide Risk Score", f"{total_risk_score}", f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals", "inverse")
+        st.markdown("<p class='kpi-explanation'>A weighted sum of all open findings. A higher score indicates greater overall portfolio risk.</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # KPI 2: Inspection Readiness Index
     overdue_major_capas = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].shape[0]
     readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0] * 5))
+    with kpi_col2:
+        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        st.metric("Inspection Readiness Index", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs", "inverse")
+        st.markdown("<p class='kpi-explanation'>A 0-100% score based on overdue and critical findings. Represents preparedness for a regulatory inspection.</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # KPI 3: Avg. Resource Strain Index
     team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
     team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
     avg_strain = team_df['Strain'].mean()
-    
-    kpi_col1.metric("Portfolio-wide Risk Score", f"{total_risk_score}", f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals", "inverse")
-    kpi_col2.metric("Inspection Readiness Index", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs", "inverse")
-    kpi_col3.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", "Target < 2.5", "normal")
+    with kpi_col3:
+        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        st.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", "Target < 2.5", "normal")
+        st.markdown("<p class='kpi-explanation'>A metric combining auditor workload and efficiency. A higher value may indicate a risk of burnout or bottlenecks.</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Program Velocity & Maturity (with embedded explanations) ---
+    # --- Program Velocity & Maturity (Already uses the correct style) ---
     st.markdown("##### Program Velocity & Maturity")
     kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
     kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
 
-    # CORRECTED: KPI 4: Avg Open CAPA Age
+    # KPI 4: Avg Open CAPA Age
     open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
-    # FIX: Use a timezone-naive 'now' to match the naive dates in the dataframe
     open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
     avg_capa_age = open_findings['Age'].mean()
     with kpi_col4:
@@ -361,7 +375,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>The average number of days that all currently open corrective/preventive actions have been active. A rising number indicates a growing backlog.</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # CORRECTED: KPI 5: Overdue SAE Reporting
+    # KPI 5: Overdue SAE Reporting
     total_saes = portfolio_df['Total_SAEs'].sum()
     overdue_saes = portfolio_df['Overdue_SAE_Reports'].sum()
     overdue_sae_rate = (overdue_saes / total_saes) * 100 if total_saes > 0 else 0
@@ -371,8 +385,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>The percentage of all Serious Adverse Events that were not reported within the mandated timeframe. The target is always 0%.</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # CORRECTED: KPI 6: First Pass Quality Rate
-    # Adjusted denominator to avoid division by zero if no subjects enrolled
+    # KPI 6: First Pass Quality Rate
     enrolled_subjects = portfolio_df['Subjects_Enrolled'].sum()
     first_pass_rate = 1 - (len(findings_df) / (enrolled_subjects * 5)) if enrolled_subjects > 0 else 1.0
     with kpi_col6:
@@ -381,7 +394,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>An estimate of documents completed correctly the first time, measuring how well quality is 'built-in' to trial processes.</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # CORRECTED: KPI 7: Data Integrity Score
+    # KPI 7: Data Integrity Score
     avg_query_rate = portfolio_df['Data_Query_Rate'].mean()
     data_integrity_score = (1 - avg_query_rate) * 100
     with kpi_col7:
@@ -390,7 +403,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>A proxy for data cleanliness, calculated as (1 - Average Data Query Rate). A higher score indicates cleaner source data.</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # CORRECTED: KPI 8: Proactive Audit Ratio
+    # KPI 8: Proactive Audit Ratio
     proactive_audits = findings_df['Is_Proactive'].sum()
     total_audits = len(findings_df)
     proactive_ratio = (proactive_audits / total_audits) * 100 if total_audits > 0 else 0
@@ -400,7 +413,7 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("<p class='kpi-explanation'>The percentage of findings from proactive (e.g., risk-based) audits. A higher ratio indicates a more mature QA program.</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # CORRECTED: KPI 9: Team Readiness
+    # KPI 9: Team Readiness
     current_certs = len(team_df[team_df['GCP_Certification_Status'] == 'Current'])
     total_auditors = len(team_df)
     team_readiness = (current_certs / total_auditors) * 100 if total_auditors > 0 else 0
@@ -451,6 +464,15 @@ def render_command_center(portfolio_df, findings_df, team_df):
         st.markdown("##### Auditor Skill Matrix")
         st.info("💡 **Expert Tip:** Use this matrix for strategic audit assignment. Assign auditors with high skill levels (darker blue) to the most complex and high-risk trials within a given disease area to maximize effectiveness.", icon="❓")
         fig = px.imshow(team_df.set_index('Auditor')[['IIT_Oversight_Skill', 'FDA_Inspection_Mgmt_Skill']], text_auto=True, aspect="auto", title="<b>Auditor Skill Level Matrix (1-5 Scale)</b>", labels=dict(x="Specialized Skill", y="Auditor", color="Skill Level"), color_continuous_scale='Blues')
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with plot_tabs[3]:
+        st.markdown("##### Portfolio Risk Treemap")
+        st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
+        risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
+        risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
+        fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
+        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
         st.plotly_chart(fig, use_container_width=True)
         
     with plot_tabs[3]:
