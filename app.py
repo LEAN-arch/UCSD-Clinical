@@ -718,7 +718,6 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             default=['All Auditors']
         )
 
-        # FIX: De-indented this entire block to the correct level
         if 'All Auditors' in selected_auditors or not selected_auditors:
             filtered_team_df = team_df.copy()
             filtered_audit_yield_df = audit_yield_df.copy()
@@ -728,7 +727,7 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
 
         plot_tabs = st.tabs(["🎯 Skill & Performance Quadrant", "📈 Efficiency & Workload Trends", "🔍 Audit Yield Analysis", "✅ Compliance & Readiness"])
 
-with plot_tabs[0]:
+        with plot_tabs[0]:
             st.markdown("###### Skill & Performance Quadrant Analysis")
             st.info("💡 **Expert Tip:** This chart combines skill with performance. Use it to identify auditors who are both highly skilled and efficient (top-right quadrant) as potential mentors, or those who may need coaching (bottom-left).", icon="❓")
             
@@ -771,6 +770,7 @@ with plot_tabs[0]:
             else:
                 st.warning("No auditor data available for the selected filter.")
 
+
         with plot_tabs[1]:
             st.markdown("###### Historical Workload vs. Efficiency Trends")
             st.info("💡 **Expert Tip:** Watch for divergence. If the blue workload line rises while the red efficiency line also rises (gets worse), it's a strong indicator of impending team burnout or process bottlenecks.", icon="❓")
@@ -810,8 +810,7 @@ with plot_tabs[0]:
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("No audit data available for the selected filter.")
-        
-        # DUPLICATE BLOCK WAS REMOVED FROM HERE
+
 
         with plot_tabs[2]:
             st.markdown("###### Comparative Audit Yield Analysis")
@@ -845,6 +844,7 @@ with plot_tabs[0]:
             else:
                 st.warning("No finding data available for the selected filter.")
 
+            
         with plot_tabs[3]:
             st.markdown("###### QA Team Compliance & Readiness")
             st.info("💡 **Expert Tip:** This provides an immediate view of departmental compliance risk. An expired certification is a direct liability during an inspection of the QA unit itself.", icon="❓")
@@ -922,7 +922,7 @@ with plot_tabs[0]:
                 new_end_date = st.date_input("Proposed End Date", datetime.date.today() + datetime.timedelta(days=365))
             with s_col3:
                 num_personnel = st.slider("Dedicated Personnel (FTE)", min_value=0.25, max_value=5.0, value=1.5, step=0.25)
-                avg_salary = 110000 # Assume an average burdened salary for planning
+                avg_salary = 110000 
                 
             submitted = st.form_submit_button("Simulate Financials")
 
