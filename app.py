@@ -40,7 +40,7 @@ logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 logging.getLogger('prophet').setLevel(logging.WARNING)
 
 # ======================================================================================
-# SECTION 2: DATA SIMULATION
+# SECTION 2: ENHANCED DATA SIMULATION
 # ======================================================================================
 @st.cache_data(ttl=900)
 def generate_master_data():
@@ -602,7 +602,7 @@ def render_quality_impact(portfolio_df, findings_df):
         X_all_final = pd.concat([X_all_num.reset_index(drop=True), X_all_encoded], axis=1).reindex(columns=model_features, fill_value=0)
         plot_df['Predicted_Risk'] = risk_model.predict_proba(X_all_final)[:, 1]
         plot_df['Risk_Tier'] = pd.cut(plot_df['Predicted_Risk'], bins=[0, 0.4, 0.6, 1.0], labels=['Low Risk', 'Medium Risk', 'High Risk'], right=False)
-        impact_summary = plot_df.groupby('Risk_Tier')[['Avg_Accrual_Per_Month', 'Screen_Fail_Rate', 'Data_Query_Rate']].mean().reset_index()
+        impact_summary = plot_df.groupby('Risk_Tier')[['Avg_Accrual_Per_Month', 'Screen_Fail_Rate', 'Data_Query_Rate']].mean(numeric_only=True).reset_index()
         fig = go.Figure(data=[
             go.Bar(name='Avg Accrual/Month', x=impact_summary['Risk_Tier'], y=impact_summary['Avg_Accrual_Per_Month'], yaxis='y', offsetgroup=1),
             go.Bar(name='Screen Fail Rate', x=impact_summary['Risk_Tier'], y=impact_summary['Screen_Fail_Rate'], yaxis='y2', offsetgroup=2),
