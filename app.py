@@ -710,6 +710,16 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
     st.subheader("Organizational Capability & Strategic Oversight", divider="blue")
     st.markdown("_This section assesses the capacity of the QA team and tracks progress and financial health of key strategic objectives._")
 
+    # --- FIX: Moved Pre-computation block to the top of the function ---
+    findings_per_audit = findings_df.groupby(['Audit_ID', 'Risk_Level']).size().unstack(fill_value=0).reset_index()
+    if 'Critical' not in findings_per_audit: findings_per_audit['Critical'] = 0
+    if 'Major' not in findings_per_audit: findings_per_audit['Major'] = 0
+    if 'Minor' not in findings_per_audit: findings_per_audit['Minor'] = 0
+    
+    audit_yield_df = pd.merge(audits_df, findings_per_audit, on='Audit_ID', how='left').fillna(0)
+    audit_yield_df['Total_Findings'] = audit_yield_df['Critical'] + audit_yield_df['Major'] + audit_yield_df['Minor']
+
+    # --- Main Layout ---
     main_tabs = st.tabs(["📊 Team Performance & Workload", "🚀 Strategic Initiatives"])
     
     with main_tabs[0]:
@@ -736,139 +746,155 @@ def render_organizational_capability(team_df, initiatives_df, audits_df, finding
             st.info("💡 **Expert Tip:** This chart combines skill with performance. Use it to identify auditors who are both highly skilled and efficient (top-right quadrant) as potential mentors, or those who may need coaching (bottom-left).", icon="❓")
             
             skill_cols = [col for col in filtered_team_df.columns if '_Skill' in col]
-            filtered_team_df['Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
-            
-            if 'Strain' not in filtered_team_df.columns:
-                filtered_team_df['Skill_Factor'] = filtered_team_df['IIT_Oversight_Skill'] + filtered_team_df['FDA_Inspection_Mgmt_Skill']
-                filtered_team_df['Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
+            if not filtered_team_df.empty:
+                filtered_team_df['Avg_Skill_Score'] = filtered_team_df[skill_cols].mean(axis=1)
+                
+                if 'Strain' not in filtered_team_df.columns:
+                    filtered_team_df['Skill_Factor'] = filtered_team_df['IIT_Oversight_Skill'] + filtered_team_df['FDA_Inspection_Mgmt_Skill']
+                    filtered_team_df['Strain'] = (filtered_team_df['Audits_Conducted_YTD'] * filtered_team_df['Avg_Report_Turnaround_Days']) / (filtered_team_df['Skill_Factor'] + 1)
 
-            fig = px.scatter(
-                filtered_team_df,
-                x='Avg_Skill_Score',
-                y='Avg_Report_Turnaround_Days',
-                size='Audits_Conducted_YTD',
-                color='Strain',
-                text='Auditor',
-                title='<b>Auditor Skill vs. Efficiency Quadrant</b>',
-                labels={
-                    'Avg_Skill_Score': 'Average Skill Score (All Categories)',
-                    'Avg_Report_Turnaround_Days': 'Efficiency (Lower is Better)',
-                    'Audits_Conducted_YTD': 'Workload (Audits YTD)',
-                    'Strain': 'Strain Index'
-                },
-                color_continuous_scale=px.colors.sequential.RdYlGn_r # Reversed: Red is high strain
-            )
-            
-            fig.update_yaxes(autorange="reversed")
-            
-            mean_x = filtered_team_df['Avg_Skill_Score'].mean()
-            mean_y = filtered_team_df['Avg_Report_Turnaround_Days'].mean()
-            
-            fig.add_hline(y=mean_y, line_dash="dot", line_color="grey", annotation_text="Team Avg. Efficiency")
-            fig.add_vline(x=mean_x, line_dash="dot", line_color="grey", annotation_text="Team Avg. Skill")
-            
-            fig.update_traces(textposition='top center')
-            fig.update_layout(plot_bgcolor='white', height=500)
-            st.plotly_chart(fig, use_container_width=True)
+                fig = px.scatter(
+                    filtered_team_df,
+                    x='Avg_Skill_Score',
+                    y='Avg_Report_Turnaround_Days',
+                    size='Audits_Conducted_YTD',
+                    color='Strain',
+                    text='Auditor',
+                    title='<b>Auditor Skill vs. Efficiency Quadrant</b>',
+                    labels={
+                        'Avg_Skill_Score': 'Average Skill Score (All Categories)',
+                        'Avg_Report_Turnaround_Days': 'Efficiency (Lower is Better)',
+                        'Audits_Conducted_YTD': 'Workload (Audits YTD)',
+                        'Strain': 'Strain Index'
+                    },
+                    color_continuous_scale=px.colors.sequential.RdYlGn_r # Reversed: Red is high strain
+                )
+                
+                fig.update_yaxes(autorange="reversed")
+                
+                mean_x = filtered_team_df['Avg_Skill_Score'].mean()
+                mean_y = filtered_team_df['Avg_Report_Turnaround_Days'].mean()
+                
+                fig.add_hline(y=mean_y, line_dash="dot", line_color="grey", annotation_text="Team Avg. Efficiency")
+                fig.add_vline(x=mean_x, line_dash="dot", line_color="grey", annotation_text="Team Avg. Skill")
+                
+                fig.update_traces(textposition='top center')
+                fig.update_layout(plot_bgcolor='white', height=500)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("No auditor data available for the selected filter.")
+
 
         with plot_tabs[1]:
             st.markdown("###### Historical Workload vs. Efficiency Trends")
             st.info("💡 **Expert Tip:** Watch for divergence. If the blue workload line rises while the red efficiency line also rises (gets worse), it's a strong indicator of impending team burnout or process bottlenecks.", icon="❓")
             
-            trend_df = filtered_audit_yield_df.copy()
-            trend_df['Quarter'] = pd.to_datetime(trend_df['Audit_Date']).dt.to_period('Q').astype(str)
-            
-            quarterly_summary = trend_df.groupby('Quarter').agg(
-                Avg_Turnaround=('Turnaround_Time', 'mean'),
-                Total_Audits=('Audit_ID', 'count')
-            ).reset_index()
+            if not filtered_audit_yield_df.empty:
+                trend_df = filtered_audit_yield_df.copy()
+                trend_df['Quarter'] = pd.to_datetime(trend_df['Audit_Date']).dt.to_period('Q').astype(str)
+                
+                quarterly_summary = trend_df.groupby('Quarter').agg(
+                    Avg_Turnaround=('Turnaround_Time', 'mean'),
+                    Total_Audits=('Audit_ID', 'count')
+                ).reset_index()
 
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=quarterly_summary['Quarter'],
-                y=quarterly_summary['Total_Audits'],
-                name='Audits Conducted',
-                marker_color='#A8DADC'
-            ))
-            fig.add_trace(go.Scatter(
-                x=quarterly_summary['Quarter'],
-                y=quarterly_summary['Avg_Turnaround'],
-                name='Avg. Turnaround (Days)',
-                yaxis='y2',
-                mode='lines+markers',
-                line=dict(color='#E63946', width=3)
-            ))
-            
-            fig.update_layout(
-                title_text="<b>Quarterly Workload vs. Report Turnaround Efficiency</b>",
-                yaxis=dict(title='Total Audits Conducted'),
-                yaxis2=dict(title='Avg. Turnaround (Days)', overlaying='y', side='right', showgrid=False, autorange="reversed"),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                plot_bgcolor='white'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=quarterly_summary['Quarter'],
+                    y=quarterly_summary['Total_Audits'],
+                    name='Audits Conducted',
+                    marker_color='#A8DADC'
+                ))
+                fig.add_trace(go.Scatter(
+                    x=quarterly_summary['Quarter'],
+                    y=quarterly_summary['Avg_Turnaround'],
+                    name='Avg. Turnaround (Days)',
+                    yaxis='y2',
+                    mode='lines+markers',
+                    line=dict(color='#E63946', width=3)
+                ))
+                
+                fig.update_layout(
+                    title_text="<b>Quarterly Workload vs. Report Turnaround Efficiency</b>",
+                    yaxis=dict(title='Total Audits Conducted'),
+                    yaxis2=dict(title='Avg. Turnaround (Days)', overlaying='y', side='right', showgrid=False, autorange="reversed"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    plot_bgcolor='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("No audit data available for the selected filter.")
+
 
         with plot_tabs[2]:
             st.markdown("###### Comparative Audit Yield Analysis")
             st.info("💡 **Expert Tip:** This chart shows the 'quality' of audits. Are some auditors finding significantly more critical issues than their peers? This can guide training, calibration sessions, or future audit assignments.", icon="❓")
             
-            avg_yield_by_auditor = filtered_audit_yield_df.groupby('Auditor')[['Critical', 'Major', 'Minor']].mean()
-            team_avg = avg_yield_by_auditor.mean().rename('Team Average')
-            
-            plot_data = pd.concat([avg_yield_by_auditor, pd.DataFrame(team_avg).T])
+            if not filtered_audit_yield_df.empty:
+                avg_yield_by_auditor = filtered_audit_yield_df.groupby('Auditor')[['Critical', 'Major', 'Minor']].mean()
+                team_avg = avg_yield_by_auditor.mean().rename('Team Average')
+                
+                plot_data = pd.concat([avg_yield_by_auditor, pd.DataFrame(team_avg).T])
 
-            fig = go.Figure()
-            colors = {'Critical': '#E63946', 'Major': '#FFC72C', 'Minor': '#457B9D'}
-            for risk_level in ['Critical', 'Major', 'Minor']:
-                fig.add_trace(go.Bar(
-                    x=plot_data.index,
-                    y=plot_data[risk_level],
-                    name=risk_level,
-                    marker_color=colors[risk_level]
-                ))
+                fig = go.Figure()
+                colors = {'Critical': '#E63946', 'Major': '#FFC72C', 'Minor': '#457B9D'}
+                for risk_level in ['Critical', 'Major', 'Minor']:
+                    fig.add_trace(go.Bar(
+                        x=plot_data.index,
+                        y=plot_data[risk_level],
+                        name=risk_level,
+                        marker_color=colors[risk_level]
+                    ))
 
-            fig.update_layout(
-                barmode='stack',
-                title_text="<b>Average Findings per Audit by Auditor vs. Team Average</b>",
-                yaxis_title="Avg. Findings per Audit",
-                xaxis_title=None,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                plot_bgcolor='white'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                fig.update_layout(
+                    barmode='stack',
+                    title_text="<b>Average Findings per Audit by Auditor vs. Team Average</b>",
+                    yaxis_title="Avg. Findings per Audit",
+                    xaxis_title=None,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    plot_bgcolor='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("No finding data available for the selected filter.")
+
             
         with plot_tabs[3]:
             st.markdown("###### QA Team Compliance & Readiness")
             st.info("💡 **Expert Tip:** This provides an immediate view of departmental compliance risk. An expired certification is a direct liability during an inspection of the QA unit itself.", icon="❓")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                compliance_df = filtered_team_df['GCP_Certification_Status'].value_counts().reset_index()
-                compliance_df.columns = ['Status', 'Count']
-                
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=len(filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Current']),
-                    number={'suffix': f" / {len(filtered_team_df)}"},
-                    domain={'x': [0, 1], 'y': [0, 1]},
-                    title={'text': "Auditors with Current GCP Certification"},
-                    gauge={'axis': {'range': [None, len(filtered_team_df)]},
-                           'bar': {'color': "#457B9D"},
-                           'steps': [
-                               {'range': [0, len(filtered_team_df) * 0.8], 'color': "#E63946"},
-                               {'range': [len(filtered_team_df) * 0.8, len(filtered_team_df) * 0.95], 'color': "#FFC72C"},
-                           ]}
-                ))
-                fig.update_layout(height=250, margin=dict(t=40, b=40))
-                st.plotly_chart(fig, use_container_width=True)
+            if not filtered_team_df.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    compliance_df = filtered_team_df['GCP_Certification_Status'].value_counts().reset_index()
+                    compliance_df.columns = ['Status', 'Count']
+                    
+                    fig = go.Figure(go.Indicator(
+                        mode="gauge+number",
+                        value=len(filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Current']),
+                        number={'suffix': f" / {len(filtered_team_df)}"},
+                        domain={'x': [0, 1], 'y': [0, 1]},
+                        title={'text': "Auditors with Current GCP Certification"},
+                        gauge={'axis': {'range': [None, len(filtered_team_df)]},
+                               'bar': {'color': "#457B9D"},
+                               'steps': [
+                                   {'range': [0, len(filtered_team_df) * 0.8], 'color': "#E63946"},
+                                   {'range': [len(filtered_team_df) * 0.8, len(filtered_team_df) * 0.95], 'color': "#FFC72C"},
+                               ]}
+                    ))
+                    fig.update_layout(height=250, margin=dict(t=40, b=40))
+                    st.plotly_chart(fig, use_container_width=True)
 
-            with col2:
-                expiring_soon = filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Expires <90d']
-                if not expiring_soon.empty:
-                    st.warning("Certifications Expiring Soon:")
-                    st.dataframe(expiring_soon[['Auditor']], use_container_width=True, hide_index=True)
-                else:
-                    st.success("All team certifications are current for the next 90 days.")
+                with col2:
+                    expiring_soon = filtered_team_df[filtered_team_df['GCP_Certification_Status'] == 'Expires <90d']
+                    if not expiring_soon.empty:
+                        st.warning("Certifications Expiring Soon:")
+                        st.dataframe(expiring_soon[['Auditor']], use_container_width=True, hide_index=True)
+                    else:
+                        st.success("All selected auditor certifications are current for the next 90 days.")
+            else:
+                st.warning("No auditor data available for the selected filter.")
+
 
     with main_tabs[1]:
         st.markdown("##### Strategic Initiatives & Financial Oversight")
