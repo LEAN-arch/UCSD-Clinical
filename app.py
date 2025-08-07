@@ -329,105 +329,79 @@ def render_command_center(portfolio_df, findings_df, team_df):
     findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
     open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
 
-    # --- Program Health & Risk (Now uses the consistent kpi-box style) ---
+    # --- Program Health & Risk ---
     st.markdown("##### Program Health & Risk")
     kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
 
-    # KPI 1: Portfolio-wide Risk Score
-    total_risk_score = int(open_findings['Risk_Score'].sum())
     with kpi_col1:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        total_risk_score = int(open_findings['Risk_Score'].sum())
         st.metric("Portfolio-wide Risk Score", f"{total_risk_score}", f"{open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0]} Open Criticals", "inverse")
         st.markdown("<p class='kpi-explanation'>A weighted sum of all open findings. A higher score indicates greater overall portfolio risk.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 2: Inspection Readiness Index
-    overdue_major_capas = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].shape[0]
-    readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0] * 5))
     with kpi_col2:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        overdue_major_capas = findings_df[(findings_df['CAPA_Status'] == 'Overdue') & (findings_df['Risk_Level'] != 'Minor')].shape[0]
+        readiness_score = max(0, 100 - (overdue_major_capas * 10) - (open_findings[open_findings['Risk_Level'] == 'Critical'].shape[0] * 5))
         st.metric("Inspection Readiness Index", f"{readiness_score}%", f"{overdue_major_capas} Overdue Major CAPAs", "inverse")
         st.markdown("<p class='kpi-explanation'>A 0-100% score based on overdue and critical findings. Represents preparedness for a regulatory inspection.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 3: Avg. Resource Strain Index
-    team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
-    team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
-    avg_strain = team_df['Strain'].mean()
     with kpi_col3:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        team_df['Skill_Factor'] = team_df['IIT_Oversight_Skill'] + team_df['FDA_Inspection_Mgmt_Skill']
+        team_df['Strain'] = (team_df['Audits_Conducted_YTD'] * team_df['Avg_Report_Turnaround_Days']) / (team_df['Skill_Factor'] + 1)
+        avg_strain = team_df['Strain'].mean()
         st.metric("Avg. Resource Strain Index", f"{avg_strain:.2f}", "Target < 2.5", "normal")
         st.markdown("<p class='kpi-explanation'>A metric combining auditor workload and efficiency. A higher value may indicate a risk of burnout or bottlenecks.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Program Velocity & Maturity (Already uses the correct style) ---
+    # --- Program Velocity & Maturity ---
     st.markdown("##### Program Velocity & Maturity")
     kpi_col4, kpi_col5, kpi_col6 = st.columns(3)
     kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
 
-    # KPI 4: Avg Open CAPA Age
-    open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
-    open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
-    avg_capa_age = open_findings['Age'].mean()
     with kpi_col4:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
+        open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
+        avg_capa_age = open_findings['Age'].mean()
         st.metric("Avg. Open CAPA Age (Days)", f"{avg_capa_age:.1f}", "Target < 30 Days", "inverse")
         st.markdown("<p class='kpi-explanation'>The average number of days that all currently open corrective/preventive actions have been active. A rising number indicates a growing backlog.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 5: Overdue SAE Reporting
-    total_saes = portfolio_df['Total_SAEs'].sum()
-    overdue_saes = portfolio_df['Overdue_SAE_Reports'].sum()
-    overdue_sae_rate = (overdue_saes / total_saes) * 100 if total_saes > 0 else 0
     with kpi_col5:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        total_saes = portfolio_df['Total_SAEs'].sum()
+        overdue_saes = portfolio_df['Overdue_SAE_Reports'].sum()
+        overdue_sae_rate = (overdue_saes / total_saes) * 100 if total_saes > 0 else 0
         st.metric("Overdue SAE Reporting", f"{overdue_sae_rate:.2f}%", f"{overdue_saes} Overdue Reports", "inverse")
         st.markdown("<p class='kpi-explanation'>The percentage of all Serious Adverse Events that were not reported within the mandated timeframe. The target is always 0%.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 6: First Pass Quality Rate
-    enrolled_subjects = portfolio_df['Subjects_Enrolled'].sum()
-    first_pass_rate = 1 - (len(findings_df) / (enrolled_subjects * 5)) if enrolled_subjects > 0 else 1.0
     with kpi_col6:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        enrolled_subjects = portfolio_df['Subjects_Enrolled'].sum()
+        first_pass_rate = 1 - (len(findings_df) / (enrolled_subjects * 5)) if enrolled_subjects > 0 else 1.0
         st.metric("First Pass Quality Rate", f"{first_pass_rate:.1%}", "Target > 95%", "normal")
         st.markdown("<p class='kpi-explanation'>An estimate of documents completed correctly the first time, measuring how well quality is 'built-in' to trial processes.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 7: Data Integrity Score
-    avg_query_rate = portfolio_df['Data_Query_Rate'].mean()
-    data_integrity_score = (1 - avg_query_rate) * 100
     with kpi_col7:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        avg_query_rate = portfolio_df['Data_Query_Rate'].mean()
+        data_integrity_score = (1 - avg_query_rate) * 100
         st.metric("Data Integrity Score", f"{data_integrity_score:.1f}%", f"{avg_query_rate:.2f} Queries/Subject", "normal")
         st.markdown("<p class='kpi-explanation'>A proxy for data cleanliness, calculated as (1 - Average Data Query Rate). A higher score indicates cleaner source data.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 8: Proactive Audit Ratio
-    proactive_audits = findings_df['Is_Proactive'].sum()
-    total_audits = len(findings_df)
-    proactive_ratio = (proactive_audits / total_audits) * 100 if total_audits > 0 else 0
     with kpi_col8:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        proactive_audits = findings_df['Is_Proactive'].sum()
+        total_audits = len(findings_df)
+        proactive_ratio = (proactive_audits / total_audits) * 100 if total_audits > 0 else 0
         st.metric("Proactive Audit Ratio", f"{proactive_ratio:.1f}%", f"{proactive_audits} Proactive Audits", "normal")
         st.markdown("<p class='kpi-explanation'>The percentage of findings from proactive (e.g., risk-based) audits. A higher ratio indicates a more mature QA program.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI 9: Team Readiness
-    current_certs = len(team_df[team_df['GCP_Certification_Status'] == 'Current'])
-    total_auditors = len(team_df)
-    team_readiness = (current_certs / total_auditors) * 100 if total_auditors > 0 else 0
-    expiring_soon = total_auditors - current_certs
     with kpi_col9:
-        st.markdown('<div class="kpi-box">', unsafe_allow_html=True)
+        current_certs = len(team_df[team_df['GCP_Certification_Status'] == 'Current'])
+        total_auditors = len(team_df)
+        team_readiness = (current_certs / total_auditors) * 100 if total_auditors > 0 else 0
+        expiring_soon = total_auditors - current_certs
         st.metric("Team Readiness (GCP Certified)", f"{team_readiness:.0f}%", f"{expiring_soon} Expiring Soon", "off")
         st.markdown("<p class='kpi-explanation'>Percentage of the QA team whose mandatory certifications are current (not expiring <90 days). A leading indicator of team preparedness.</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
         
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # --- Plotting Tabs ---
+    # --- Plotting Tabs (No changes needed here) ---
     plot_tabs = st.tabs(["🔥 Priority Alerts", "📊 Finding Backlog", "🧑‍🔬 Auditor Skills", "🗺️ Risk Treemap"])
+    # ... (rest of the function remains the same) ...
     with plot_tabs[0]:
         st.markdown("##### High-Priority Alerts & Portfolio Status")
         col1, col2 = st.columns([1, 2])
