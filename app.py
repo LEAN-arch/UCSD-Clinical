@@ -290,8 +290,14 @@ def render_command_center(portfolio_df, findings_df, team_df):
     st.subheader("Executive Command Center", divider="blue")
     st.markdown("A strategic overview of the QA program's current status, efficiency, and highest priority items.")
 
+    # --- Pre-computation to avoid SettingWithCopyWarning ---
     risk_weights = {'Critical': 10, 'Major': 5, 'Minor': 1}
+    # 1. Create all necessary columns on the main DataFrame first.
     findings_df['Risk_Score'] = findings_df['Risk_Level'].map(risk_weights)
+    findings_df['Finding_Date'] = pd.to_datetime(findings_df['Finding_Date'])
+    findings_df['Age'] = (datetime.datetime.now() - findings_df['Finding_Date']).dt.days
+
+    # 2. NOW, create the slice. It will inherit all the columns it needs.
     open_findings = findings_df[~findings_df['CAPA_Status'].isin(['Closed-Effective'])].copy()
 
     # --- Program Health & Risk ---
@@ -323,8 +329,6 @@ def render_command_center(portfolio_df, findings_df, team_df):
     kpi_col7, kpi_col8, kpi_col9 = st.columns(3)
 
     with kpi_col4:
-        open_findings['Finding_Date'] = pd.to_datetime(open_findings['Finding_Date'])
-        open_findings['Age'] = (datetime.datetime.now() - open_findings['Finding_Date']).dt.days
         avg_capa_age = open_findings['Age'].mean()
         st.metric("Avg. Open CAPA Age (Days)", f"{avg_capa_age:.1f}", "Target < 30 Days", "inverse")
         st.markdown("<p class='kpi-explanation'>The average age of open corrective actions. A rising number indicates a growing backlog.</p>", unsafe_allow_html=True)
