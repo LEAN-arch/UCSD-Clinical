@@ -96,7 +96,29 @@ def generate_master_data():
     initiatives_data = {'Initiative': ['eQMS Implementation', 'Auditor Training Program Revamp', 'Inspection Readiness Mock Audits', 'IIT Risk-Based Monitoring Plan'], 'Lead': ['Jane Doe, RN', 'John Smith, PhD', 'Maria Garcia, MPH', 'Kevin Lee, CCRC'], 'Status': ['On Track', 'At Risk', 'Completed', 'On Track'], 'Percent_Complete': [60, 85, 100, 30], 'Start_Date': pd.to_datetime(['2023-01-15', '2023-03-01', '2023-06-01', '2023-09-01']), 'End_Date': pd.to_datetime(['2024-06-30', '2023-11-30', '2023-08-31', '2024-03-31']), 'Budget_USD': [75000, 15000, 25000, 10000], 'Spent_USD': [40000, 14000, 23500, 2500]}
     initiatives_df = pd.DataFrame(initiatives_data)
     
-    return portfolio_df, findings_df, team_df, initiatives_df
+    # Simulate an audits log that links auditors to trials and findings
+    audits_data = []
+    # Create a base audit for each finding, linking it to a trial and auditor
+    for index, finding in findings_df.iterrows():
+        audits_data.append({
+            'Audit_ID': f"AUDIT-{finding['Finding_ID']}",
+            'Trial_ID': finding['Trial_ID'],
+            'Auditor': np.random.choice(team_df['Auditor']),
+            'Audit_Date': finding['Finding_Date'] - datetime.timedelta(days=np.random.randint(1, 5)),
+            'Turnaround_Time': np.random.uniform(7, 21) # Days to finalize report
+        })
+    audits_df = pd.DataFrame(audits_data)
+
+    # Ensure findings_df has a corresponding Audit_ID
+    findings_df['Audit_ID'] = findings_df['Finding_ID'].apply(lambda x: f"AUDIT-{x}")
+    # Simulate some proactive/risk-based findings
+    findings_df['Is_Proactive'] = np.random.choice([True, False], len(findings_df), p=[0.3, 0.7])
+    # Simulate some additional portfolio metrics needed by KPIs
+    portfolio_df['Total_SAEs'] = np.random.randint(0, 15, len(portfolio_df))
+    portfolio_df['Overdue_SAE_Reports'] = portfolio_df.apply(lambda r: np.random.randint(0, r['Total_SAEs']//2) if r['Total_SAEs'] > 0 else 0, axis=1)
+
+    # ========= UPDATE THE RETURN STATEMENT TO INCLUDE THE NEW DATAFRAME ========
+    return portfolio_df, findings_df, team_df, initiatives_df, audits_df
 
 # ======================================================================================
 # SECTION 3: ANALYTICAL & PLOTTING FUNCTIONS
