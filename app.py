@@ -525,14 +525,86 @@ def render_command_center(portfolio_df, findings_df, team_df):
             fig.update_layout(plot_bgcolor='white', coloraxis_colorbar=dict(title=f'{selected_skill_label}<br>Level'))
             st.plotly_chart(fig, use_container_width=True)
                
-    with plot_tabs[3]:
-        st.markdown("##### Portfolio Risk Treemap")
-        st.info("💡 **Expert Tip:** This treemap visualizes where risk is concentrated in your portfolio. Large boxes represent areas with the highest cumulative risk score. Use this to quickly identify high-risk disease teams or trial types that may require a programmatic review.", icon="❓")
-        risk_summary = findings_df.groupby('Trial_ID')['Risk_Score'].sum().reset_index()
-        risk_map_df = pd.merge(portfolio_df, risk_summary, on='Trial_ID', how='left').fillna(0)
-        fig = px.treemap(risk_map_df, path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'], values='Risk_Score', title='<b>Portfolio Risk Concentration by Disease Team and Trial Type</b>', color_continuous_scale='Reds', color='Risk_Score')
-        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-        st.plotly_chart(fig, use_container_width=True)
+with plot_tabs[3]:
+        st.markdown("##### Interactive Risk Exploration Tool")
+
+        # --- 1. Comprehensive Data Preparation ---
+        # A. Calculate OBSERVED risk metrics from past findings
+        risk_summary = findings_df.groupby('Trial_ID').agg(
+            Risk_Score=('Risk_Score', 'sum'),
+            Total_Findings=('Finding_ID', 'count')
+        ).reset_index()
+
+        # Count findings by risk level for each trial
+        risk_counts = pd.crosstab(findings_df['Trial_ID'], findings_df['Risk_Level']).reset_index()
+        risk_counts = risk_counts.rename(columns={'Critical': 'Critical_Count', 'Major': 'Major_Count', 'Minor': 'Minor_Count'})
+        
+        # Count open CAPAs for each trial
+        open_capa_counts = findings_df[findings_df['CAPA_Status'] != 'Closed-Effective'].groupby('Trial_ID').size().reset_index(name='Open_CAPA_Count')
+
+        # B. Calculate PREDICTED risk using the existing model
+        risk_model, encoder, model_features, _ = get_risk_model_with_importance(portfolio_df)
+        X_all_cat = portfolio_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]
+        X_all_num = portfolio_df[['Is_First_In_Human', 'Num_Sites']]
+        X_all_encoded = pd.DataFrame(encoder.transform(X_all_cat), columns=encoder.get_feature_names_out(X_all_cat.columns))
+        X_all_final = pd.concat([X_all_num.reset_index(drop=True), X_all_encoded], axis=1).reindex(columns=model_features, fill_value=0)
+        portfolio_df['Predicted_Risk'] = risk_model.predict_proba(X_all_final)[:, 1]
+
+        # C. Merge all metrics into one master dataframe for the plot
+        risk_map_df = portfolio_df.merge(risk_summary, on='Trial_ID', how='left')
+        risk_map_df = risk_map_df.merge(risk_counts, on='Trial_ID', how='left')
+        risk_map_df = risk_map_df.merge(open_capa_counts, on='Trial_ID', how='left')
+        risk_map_df.fillna(0, inplace=True)
+        risk_map_df['Avg_Risk_Severity'] = risk_map_df.apply(lambda r: r['Risk_Score'] / r['Total_Findings'] if r['Total_Findings'] > 0 else 0, axis=1)
+
+        # --- 2. Interactive Controls ---
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            st.info("💡 **Expert Tip:** Use these controls to analyze risk from different perspectives. Switch to 'Predicted Risk' to be proactive!")
+            
+            view_selection = st.selectbox(
+                "Select Risk View (Box Size):",
+                options=["Observed Risk (from past findings)", "Predicted Risk (from model)"],
+                index=0
+            )
+            
+            color_selection = st.selectbox(
+                "Select Metric (Box Color):",
+                options=["Number of Critical Findings", "Number of Open CAPAs", "Average Finding Severity"],
+                index=0
+            )
+
+        # --- 3. Dynamic Plot Rendering ---
+        with col2:
+            view_column_map = {"Observed Risk (from past findings)": "Risk_Score", "Predicted Risk (from model)": "Predicted_Risk"}
+            color_column_map = {"Number of Critical Findings": "Critical_Count", "Number of Open CAPAs": "Open_CAPA_Count", "Average Finding Severity": "Avg_Risk_Severity"}
+            
+            view_col = view_column_map[view_selection]
+            color_col = color_column_map[color_selection]
+
+            fig = px.treemap(
+                risk_map_df,
+                path=[px.Constant("All Trials"), 'Disease_Team', 'Trial_Type', 'PI_Name'],
+                values=view_col,
+                color=color_col,
+                custom_data=['Trial_ID', 'Risk_Score', 'Predicted_Risk', 'Critical_Count', 'Major_Count', 'Minor_Count', 'Open_CAPA_Count'],
+                color_continuous_scale='Reds',
+                title=f'<b>Portfolio Risk Analysis</b><br><i>Box Size by {view_selection} | Box Color by {color_selection}</i>'
+            )
+
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{label}</b><br><br>"
+                    "<b>Predicted Risk Score:</b> %{customdata[2]:.1%}<br>"
+                    "<b>Observed Risk Score:</b> %{customdata[1]:.0f}<br>"
+                    "<b>Critical Findings:</b> %{customdata[3]}<br>"
+                    "<b>Major Findings:</b> %{customdata[4]}<br>"
+                    "<b>Open CAPAs:</b> %{customdata[6]:.0f}"
+                    "<extra></extra>"
+                )
+            )
+            fig.update_layout(margin=dict(t=80, l=25, r=25, b=25))
+            st.plotly_chart(fig, use_container_width=True)
 
 def render_predictive_analytics(findings_df, portfolio_df):
     st.subheader("Predictive Analytics & Forecasting", divider="blue")
