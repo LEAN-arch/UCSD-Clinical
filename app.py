@@ -40,13 +40,14 @@ logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 logging.getLogger('prophet').setLevel(logging.WARNING)
 
 # ======================================================================================
-# SECTION 2: DATA SIMULATION
+# SECTION 2: ENHANCED DATA SIMULATION
 # ======================================================================================
 @st.cache_data(ttl=900)
 def generate_master_data():
     np.random.seed(42)
     num_trials = 60
     trial_ids = [f'MCC-{t}-{i:03d}' for t in ['IIT', 'IND', 'COG'] for i in range(1, 11)] + [f'INDUSTRY-{c}-{i:03d}' for c in ['PFE', 'BMY', 'MRK'] for i in range(1, 11)]
+    
     portfolio_data = {
         'Trial_ID': trial_ids,
         'Trial_Type': np.random.choice(['Investigator-Initiated (IIT)', 'Industry-Sponsored', 'Cooperative Group'], num_trials, p=[0.4, 0.4, 0.2]),
@@ -58,7 +59,9 @@ def generate_master_data():
         'Is_First_In_Human': np.random.choice([True, False], num_trials, p=[0.1, 0.9]),
         'Num_Sites': np.random.choice([1, 2, 5], num_trials, p=[0.8, 0.15, 0.05]),
         'Screen_Fail_Rate': np.random.uniform(0.10, 0.50, num_trials),
-        'Avg_Accrual_Per_Month': np.random.uniform(0.5, 5.0, num_trials)
+        'Avg_Accrual_Per_Month': np.random.uniform(0.5, 5.0, num_trials),
+        'Data_Query_Rate': np.random.uniform(0.05, 0.25, num_trials),
+        'Last_Audit_Date': pd.to_datetime([datetime.date.today() - datetime.timedelta(days=np.random.randint(30, 730)) for _ in range(num_trials)])
     }
     portfolio_df = pd.DataFrame(portfolio_data)
 
@@ -66,13 +69,16 @@ def generate_master_data():
     portfolio_df['PI_Name'] = portfolio_df.apply(lambda row: np.random.choice(pis_by_team[row['Disease_Team']]), axis=1)
 
     finding_categories = ['Informed Consent Process', 'Source Data Verification', 'Investigational Product Accountability', 'Regulatory Binder Mgmt', 'AE/SAE Reporting', 'Protocol Adherence']
-    findings_data = {'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)], 'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], 250), 'Category': np.random.choice(finding_categories, 250, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]), 'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], 250, p=[0.05, 0.35, 0.6]), 'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], 250, p=[0.15, 0.1, 0.7, 0.05]), 'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 700, 250)])}
+    findings_data = {'Finding_ID': [f'FIND-{i:04d}' for i in range(1, 251)], 'Trial_ID': np.random.choice(portfolio_df['Trial_ID'], 250), 'Category': np.random.choice(finding_categories, 250, p=[0.3, 0.2, 0.15, 0.15, 0.1, 0.1]), 'Risk_Level': np.random.choice(['Critical', 'Major', 'Minor'], 250, p=[0.05, 0.35, 0.6]), 'CAPA_Status': np.random.choice(['Open', 'Pending Verification', 'Closed-Effective', 'Overdue'], 250, p=[0.15, 0.1, 0.7, 0.05]), 'Finding_Date': pd.to_datetime([datetime.date(2022, 1, 1) + datetime.timedelta(days=int(d)) for d in np.random.randint(0, 900, 250)])}
     findings_df = pd.DataFrame(findings_data).merge(portfolio_df[['Trial_ID', 'Disease_Team', 'Trial_Type', 'PI_Name']], on='Trial_ID', how='left')
+    findings_df['CAPA_Plan_Date'] = findings_df.apply(lambda r: r['Finding_Date'] + datetime.timedelta(days=np.random.randint(2, 7)) if r['CAPA_Status'] != 'Open' else pd.NaT, axis=1)
+    findings_df['CAPA_Closure_Date'] = findings_df.apply(lambda r: r['CAPA_Plan_Date'] + datetime.timedelta(days=np.random.randint(10, 60)) if r['CAPA_Status'] == 'Closed-Effective' else pd.NaT, axis=1)
 
     major_finding_trials = findings_df[findings_df['Risk_Level'].isin(['Major', 'Critical'])]['Trial_ID'].unique()
     portfolio_df['Had_Major_Finding'] = portfolio_df['Trial_ID'].isin(major_finding_trials).astype(int)
-    portfolio_df.loc[portfolio_df['Trial_ID'].isin(major_finding_trials), 'Screen_Fail_Rate'] *= 1.5
-    portfolio_df.loc[portfolio_df['Trial_ID'].isin(major_finding_trials), 'Avg_Accrual_Per_Month'] *= 0.6
+    portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Screen_Fail_Rate'] *= 1.5
+    portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Avg_Accrual_Per_Month'] *= 0.7
+    portfolio_df.loc[portfolio_df['Had_Major_Finding'] == 1, 'Data_Query_Rate'] *= 1.8
 
     auditors = ['Jane Doe, RN', 'John Smith, PhD', 'Maria Garcia, MPH', 'Kevin Lee, CCRC']
     team_data = {
@@ -94,7 +100,7 @@ def generate_master_data():
 # SECTION 3: ANALYTICAL & PLOTTING FUNCTIONS
 # ======================================================================================
 @st.cache_resource
-def get_trial_risk_model(_portfolio_df):
+def get_risk_model_with_importance(_portfolio_df):
     features, target = ['Trial_Type', 'Phase', 'PI_Experience_Level', 'Is_First_In_Human', 'Num_Sites'], 'Had_Major_Finding'
     X, y = _portfolio_df[features], _portfolio_df[target]
     categorical_features = ['Trial_Type', 'Phase', 'PI_Experience_Level']
@@ -102,6 +108,24 @@ def get_trial_risk_model(_portfolio_df):
     X_encoded = pd.DataFrame(encoder.fit_transform(X[categorical_features]), columns=encoder.get_feature_names_out(categorical_features))
     X_final = pd.concat([X.drop(columns=categorical_features).reset_index(drop=True), X_encoded], axis=1)
     model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=42)
+    model.fit(X_final, y)
+    importance = pd.DataFrame(data=model.coef_[0], index=X_final.columns, columns=['Coefficient']).sort_values(by='Coefficient', ascending=False)
+    return model, encoder, X_final.columns, importance
+
+@st.cache_resource
+def get_finding_category_model(_portfolio_df, _findings_df):
+    major_findings = _findings_df[_findings_df['Risk_Level'].isin(['Major', 'Critical'])]
+    if major_findings.empty: return None, None, None
+    first_major = major_findings.sort_values('Finding_Date').groupby('Trial_ID').first().reset_index()
+    model_data = pd.merge(_portfolio_df, first_major[['Trial_ID', 'Category']], on='Trial_ID', how='left')
+    model_data['Category'].fillna('No Major Finding', inplace=True)
+    features, target = ['Trial_Type', 'Phase', 'PI_Experience_Level', 'Is_First_In_Human', 'Num_Sites'], 'Category'
+    X, y = model_data[features], model_data[target]
+    categorical_features = ['Trial_Type', 'Phase', 'PI_Experience_Level']
+    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    X_encoded = pd.DataFrame(encoder.fit_transform(X[categorical_features]), columns=encoder.get_feature_names_out(categorical_features))
+    X_final = pd.concat([X.drop(columns=categorical_features).reset_index(drop=True), X_encoded], axis=1)
+    model = LogisticRegression(max_iter=1000, class_weight='balanced', multi_class='multinomial', random_state=42)
     model.fit(X_final, y)
     return model, encoder, X_final.columns
 
@@ -134,28 +158,9 @@ def plot_prophet_forecast_sme(forecast, monthly_df):
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill=None, mode='lines', line_color='rgba(62,193,211,0.2)', showlegend=False))
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(62,193,211,0.2)', name='Uncertainty', hoverinfo='none'))
     fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['trend'], mode='lines', name='Overall Trend', line=dict(color='#FFC72C', width=3), hovertemplate="Overall Trend: %{y:.1f}<extra></extra>"))
-    
-    # ========= THE DEFINITIVE FIX IS HERE =========
-    # Instead of using fig.add_vline, we create the line and annotation separately
-    # to bypass the buggy internal logic in Plotly.
     last_actual_date = monthly_df['ds'].iloc[-1]
-    
-    # 1. Add the line as a shape
-    fig.add_shape(type="line",
-        x0=last_actual_date, y0=0, x1=last_actual_date, y1=1,
-        yref='paper', # Stretches the line from bottom to top
-        line=dict(color="grey", width=1, dash="dot")
-    )
-
-    # 2. Add the annotation for the line
-    fig.add_annotation(
-        x=last_actual_date, y=1.05, yref='paper',
-        text="Last Actual",
-        showarrow=False,
-        xanchor='left',
-    )
-    # ========= END OF FIX =========
-    
+    fig.add_shape(type="line", x0=last_actual_date, y0=0, x1=last_actual_date, y1=1, yref='paper', line=dict(color="grey", width=1, dash="dot"))
+    fig.add_annotation(x=last_actual_date, y=1.05, yref='paper', text="Last Actual", showarrow=False, xanchor='left')
     fig.update_layout(title='<b>12-Month Forecast of Audit Findings with Trend Analysis</b>', xaxis_title=None, yaxis_title='Number of Findings', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
@@ -290,28 +295,49 @@ def render_predictive_analytics(findings_df, portfolio_df):
     st.markdown("_This section utilizes predictive modeling to forecast future states and quantify inherent risk, enabling a proactive, data-driven approach to quality management._")
     
     forecast_data, actual_monthly_data = generate_prophet_forecast(findings_df)
-    risk_model, encoder, model_features = get_trial_risk_model(portfolio_df)
+    risk_model, encoder, model_features, importance_df = get_risk_model_with_importance(portfolio_df)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        with st.container(border=True):
-            st.markdown("##### Time-Series Forecast of Audit Finding Volume")
-            st.info("💡 **Expert Tip:** Is the overall yellow trend line increasing, decreasing, or flat? An increasing trend suggests systemic issues may be worsening, requiring strategic intervention beyond addressing individual findings.", icon="❓")
-            st.plotly_chart(plot_prophet_forecast_sme(forecast_data, actual_monthly_data), use_container_width=True)
-    with col2:
-        with st.container(border=True):
-            st.markdown("##### Inherent Risk Prediction for New Trials")
-            st.info("💡 **Expert Tip:** Use this tool to triage new protocols. A predicted risk score > 60% may warrant assigning a more senior auditor or increasing the monitoring frequency from the start.", icon="❓")
-            with st.form("risk_predictor_form"):
-                p_type = st.selectbox("Trial Type", portfolio_df['Trial_Type'].unique(), key='p_type')
-                p_phase = st.selectbox("Trial Phase", portfolio_df['Phase'].unique(), key='p_phase')
-                p_pi_exp = st.selectbox("PI Experience", portfolio_df['PI_Experience_Level'].unique(), key='p_pi')
-                if st.form_submit_button("🔬 Forecast Risk Profile"):
-                    input_df = pd.DataFrame({'Trial_Type': [p_type], 'Phase': [p_phase], 'PI_Experience_Level': [p_pi_exp], 'Is_First_In_Human': [False], 'Num_Sites': [1]})
-                    input_encoded = pd.DataFrame(encoder.transform(input_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]), columns=encoder.get_feature_names_out(['Trial_Type', 'Phase', 'PI_Experience_Level']))
-                    input_final = pd.concat([input_df.drop(columns=['Trial_Type', 'Phase', 'PI_Experience_Level']).reset_index(drop=True), input_encoded], axis=1).reindex(columns=model_features, fill_value=0)
-                    prediction_proba = risk_model.predict_proba(input_final)[0][1]
-                    st.success(f"Predicted Risk of a Major Finding: **{prediction_proba:.1%}**")
+    with st.container(border=True):
+        st.markdown("##### Time-Series Forecast of Audit Finding Volume")
+        st.info("💡 **Expert Tip:** Is the overall yellow trend line increasing, decreasing, or flat? An increasing trend suggests systemic issues may be worsening, requiring strategic intervention beyond addressing individual findings.", icon="❓")
+        st.plotly_chart(plot_prophet_forecast_sme(forecast_data, actual_monthly_data), use_container_width=True)
+
+    with st.container(border=True):
+        st.markdown("##### Inherent Risk Prediction for New Trials")
+        st.info("💡 **Expert Tip:** Use this tool to triage new protocols. A predicted risk score > 60% may warrant assigning a more senior auditor or increasing the monitoring frequency from the start.", icon="❓")
+        with st.form("risk_predictor_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1: p_type = st.selectbox("Trial Type", portfolio_df['Trial_Type'].unique(), key='p_type')
+            with col2: p_phase = st.selectbox("Trial Phase", portfolio_df['Phase'].unique(), key='p_phase')
+            with col3: p_pi_exp = st.selectbox("PI Experience", portfolio_df['PI_Experience_Level'].unique(), key='p_pi')
+            if st.form_submit_button("🔬 Forecast Risk Profile"):
+                input_df = pd.DataFrame({'Trial_Type': [p_type], 'Phase': [p_phase], 'PI_Experience_Level': [p_pi_exp], 'Is_First_In_Human': [False], 'Num_Sites': [1]})
+                input_encoded = pd.DataFrame(encoder.transform(input_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]), columns=encoder.get_feature_names_out(['Trial_Type', 'Phase', 'PI_Experience_Level']))
+                input_final = pd.concat([input_df.drop(columns=['Trial_Type', 'Phase', 'PI_Experience_Level']).reset_index(drop=True), input_encoded], axis=1).reindex(columns=model_features, fill_value=0)
+                prediction_proba = risk_model.predict_proba(input_final)[0][1]
+                st.success(f"Predicted Risk of a Major Finding: **{prediction_proba:.1%}**")
+
+    with st.container(border=True):
+        st.markdown("##### Key Risk Factor Analysis")
+        st.info("💡 **Expert Tip:** This chart shows which trial characteristics have the biggest impact on the likelihood of a major finding. Use this to justify resource allocation and guide preventative training efforts.", icon="❓")
+        importance_df['Color'] = np.where(importance_df['Coefficient'] < 0, '#005A9C', '#E63946')
+        fig = go.Figure(go.Bar(x=importance_df.index, y=importance_df['Coefficient'], marker_color=importance_df['Color']))
+        fig.update_layout(title_text="<b>Impact of Trial Factors on Risk of Major Findings</b>", xaxis_title="Trial Characteristic", yaxis_title="Model Coefficient (Impact on Risk)")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with st.container(border=True):
+        st.markdown("##### Portfolio Risk Segmentation")
+        st.info("💡 **Expert Tip:** This sunburst chart shows how the overall portfolio risk is distributed across different trial types and disease teams. A large 'High Risk' segment in a specific area may indicate a need for a targeted review.", icon="❓")
+        X_all_cat = portfolio_df[['Trial_Type', 'Phase', 'PI_Experience_Level']]
+        X_all_num = portfolio_df[['Is_First_In_Human', 'Num_Sites']]
+        X_all_encoded = pd.DataFrame(encoder.transform(X_all_cat), columns=encoder.get_feature_names_out(X_all_cat.columns))
+        X_all_final = pd.concat([X_all_num.reset_index(drop=True), X_all_encoded], axis=1).reindex(columns=model_features, fill_value=0)
+        portfolio_df['Predicted_Risk'] = risk_model.predict_proba(X_all_final)[:, 1]
+        portfolio_df['Risk_Tier'] = pd.cut(portfolio_df['Predicted_Risk'], bins=[0, 0.2, 0.4, 0.6, 1.0], labels=['Low', 'Medium', 'High', 'Critical'], right=False)
+        path_df = portfolio_df.groupby(['Risk_Tier', 'Disease_Team', 'Trial_Type']).size().reset_index(name='Count')
+        fig = px.sunburst(path_df, path=['Risk_Tier', 'Disease_Team', 'Trial_Type'], values='Count', title="<b>Portfolio Risk Distribution</b>")
+        fig.update_layout(margin=dict(t=40, l=0, r=0, b=0))
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_systemic_risk(findings_df, portfolio_df):
     st.subheader("Systemic Process & Risk Analysis", divider="blue")
@@ -331,15 +357,14 @@ def render_systemic_risk(findings_df, portfolio_df):
     
     with st.container(border=True):
         st.markdown("##### CAPA Effectiveness & Finding Recurrence Analysis")
-        st.info("💡 **Expert Tip:** This chart is critical for a mature QMS. A high recurrence rate in a specific category (e.g., 'Informed Consent') indicates that our Corrective and Preventive Actions are not addressing the root cause and need to be re-evaluated.", icon="❓")
+        st.info("💡 **Expert Tip:** This chart is critical for a mature QMS. A high recurrence rate in a specific category indicates that our Corrective and Preventive Actions are not addressing the root cause and need to be re-evaluated.", icon="❓")
         capa_effectiveness_df = analyze_capa_effectiveness(findings_df)
         if not capa_effectiveness_df.empty:
             fig = px.bar(capa_effectiveness_df, x='Recurrence_Rate', y='Category', orientation='h', title='<b>Finding Recurrence Rate by Category (Post-CAPA)</b>', labels={'Recurrence_Rate': 'Recurrence Rate (%)', 'Category': 'Finding Category'}, text=capa_effectiveness_df['Recurrence_Rate'].apply(lambda x: f'{x:.0%}'))
             fig.update_traces(marker_color='#E63946', textposition='outside')
             fig.update_layout(plot_bgcolor='white', xaxis_tickformat='.0%', yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.write("No closed CAPAs available to analyze for effectiveness.")
+        else: st.write("No closed CAPAs available to analyze for effectiveness.")
 
     with st.container(border=True):
         st.markdown("##### Interactive Regulatory Inspection Simulation")
